@@ -8,7 +8,7 @@ Automatically scans Python (pip), JavaScript (npm/yarn), VS Code extensions and 
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/monpinero/MagiSentry)
 [![i18n: EN | SK](https://img.shields.io/badge/i18n-EN%20%7C%20SK-orange.svg)](https://github.com/monpinero/MagiSentry)
 
-[🇸🇰 Slovenská verzia](README_SK.md)
+[🇸🇰 Slovenská verzia](README.SK.md)
 
 > [!WARNING]
 > MagiSentry works by intercepting `pip` and `npm` commands. AI coding agents may attempt to bypass this protection.
