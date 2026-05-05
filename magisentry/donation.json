@@ -1,0 +1,8 @@
+{
+  "_comment": "Donation config. Author fills the placeholders before publishing. Do not hardcode real URLs / addresses anywhere else in the project.",
+  "kofi_url": "https://ko-fi.com/monpinero",
+  "xmr_address": "48W5FXBSBecjG6ApZH5KEtYMKZxiGVkJhdbCjXWGj9Ahe6R58LpZvhqSWHoftZCAgWKDez3HQ3teAD8mEUEPHYhnHT6SusB",
+  "prompt_every_n_scans": 20,
+  "show_on_threat_blocked": true,
+  "show_on_install_complete": false
+}

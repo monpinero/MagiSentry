@@ -1,0 +1,35 @@
+{
+  "_comment": "VS Code tasks.json for Cline. Place at .vscode/tasks.json (or merge with existing). Cline executes shell commands directly, so the hard guarantee is the universal pip/npm shim being first on PATH. These tasks give Cline a discoverable safe path it can prefer when explicitly told to scan installs.",
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MagiSentry: scan & install pip package",
+      "type": "shell",
+      "command": "magisentry",
+      "args": ["pip", "install", "${input:clinePipPackage}"],
+      "problemMatcher": [],
+      "presentation": {"reveal": "always", "panel": "dedicated", "clear": true}
+    },
+    {
+      "label": "MagiSentry: scan & install pip requirements",
+      "type": "shell",
+      "command": "magisentry",
+      "args": ["pip", "install", "-r", "${input:clineRequirementsFile}"],
+      "problemMatcher": [],
+      "presentation": {"reveal": "always", "panel": "dedicated", "clear": true}
+    },
+    {
+      "label": "MagiSentry: scan & install npm package",
+      "type": "shell",
+      "command": "magisentry",
+      "args": ["npm", "install", "${input:clineNpmPackage}"],
+      "problemMatcher": [],
+      "presentation": {"reveal": "always", "panel": "dedicated", "clear": true}
+    }
+  ],
+  "inputs": [
+    {"id": "clinePipPackage", "type": "promptString", "description": "Python package"},
+    {"id": "clineNpmPackage", "type": "promptString", "description": "JS package"},
+    {"id": "clineRequirementsFile", "type": "promptString", "description": "Path to requirements.txt", "default": "requirements.txt"}
+  ]
+}

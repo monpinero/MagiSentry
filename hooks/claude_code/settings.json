@@ -1,0 +1,17 @@
+{
+  "_comment": "MagiSentry hook for Claude Code. Drop into .claude/settings.json (project-local) or ~/.claude/settings.json (global). Intercepts pip/npm/yarn install Bash commands and routes them through `magisentry` so the 7-layer scan runs before the package is ever fetched. If `magisentry` exits 2 (threat) or 1 (technical failure in fail-secure mode), the original Bash call is blocked. Exit 0 lets the original command proceed.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -m magisentry.hooks.claude_code_guard",
+            "timeout": 600
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+# MagiSentry project rule for Windsurf (Cognition)
+# Place at: <project>/.windsurf/rules
+#
+# Windsurf has no native pre-tool hook system. The hard guarantee against
+# unscanned installs comes from the universal pip/npm shims (installed by
+# `python -m magisentry.setup.install_hooks --tool windsurf`); this rule
+# nudges the Windsurf agent to call magisentry directly for cleaner UX.
+
+ALWAYS scan packages before installing them, by invoking the MagiSentry
+command-line tool instead of pip/npm/yarn directly:
+
+  - Python:      magisentry pip install <package>
+  - JavaScript:  magisentry npm install <package>
+
+NEVER call any of these directly:
+  - pip install ...    /  python -m pip install ...
+  - npm install ...    /  npm i ...
+  - yarn add ...       /  pnpm add ...
+
+If the user provides a `requirements.txt`, run:
+  magisentry pip install -r requirements.txt
+
+If MagiSentry reports a THREAT, surface the full output to the user and
+WAIT for their decision — do not auto-confirm.

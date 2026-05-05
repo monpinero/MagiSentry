@@ -1,0 +1,35 @@
+{
+  "_comment": "VS Code tasks.json for GitHub Copilot. Place at .vscode/tasks.json. Provides scanned-install tasks the user (or Copilot Chat) can invoke via 'Tasks: Run Task' instead of executing pip/npm in the integrated terminal. The hard guarantee against bypass remains the universal shell shim — this file just gives Copilot a discoverable safe path.",
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MagiSentry: pip install (prompt for package)",
+      "type": "shell",
+      "command": "magisentry",
+      "args": ["pip", "install", "${input:pipPackage}"],
+      "problemMatcher": [],
+      "presentation": {"reveal": "always", "panel": "dedicated"}
+    },
+    {
+      "label": "MagiSentry: pip install -r requirements.txt",
+      "type": "shell",
+      "command": "magisentry",
+      "args": ["pip", "install", "-r", "${input:requirementsFile}"],
+      "problemMatcher": [],
+      "presentation": {"reveal": "always", "panel": "dedicated"}
+    },
+    {
+      "label": "MagiSentry: npm install (prompt for package)",
+      "type": "shell",
+      "command": "magisentry",
+      "args": ["npm", "install", "${input:npmPackage}"],
+      "problemMatcher": [],
+      "presentation": {"reveal": "always", "panel": "dedicated"}
+    }
+  ],
+  "inputs": [
+    {"id": "pipPackage", "type": "promptString", "description": "Python package (e.g. requests or flask==3.0.0)"},
+    {"id": "npmPackage", "type": "promptString", "description": "JS package (e.g. lodash or react@18)"},
+    {"id": "requirementsFile", "type": "promptString", "description": "Path to requirements.txt", "default": "requirements.txt"}
+  ]
+}

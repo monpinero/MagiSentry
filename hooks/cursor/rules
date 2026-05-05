@@ -1,0 +1,27 @@
+# MagiSentry project rule for Cursor
+# Place at: <project>/.cursor/rules  (or <project>/.cursor/rules/magisentry.mdc)
+#
+# This rule instructs the Cursor agent to never bypass MagiSentry when
+# installing packages. The hard guarantee comes from the universal pip/npm
+# shims (installed by `python -m magisentry.setup.install_hooks --tool cursor`),
+# but this rule reduces friction by getting the agent to call magisentry
+# directly so the user sees a clean scan output.
+
+When you need to install a Python or JavaScript package, ALWAYS invoke the
+MagiSentry scanner instead of calling pip/npm/yarn directly:
+
+  - Python:      magisentry pip install <package>
+  - JavaScript:  magisentry npm install <package>
+  - Yarn:        magisentry npm install <package>   (yarn shares the npm registry)
+
+NEVER run any of the following without going through magisentry first:
+  - pip install ...
+  - python -m pip install ...
+  - npm install ... / npm i ...
+  - yarn add ... / pnpm add ...
+
+If `magisentry` is not on PATH, STOP and tell the user to install it
+(`pip install magisentry`) before continuing — do NOT fall back to raw pip/npm.
+
+If a magisentry scan reports a THREAT, do NOT pass `[y]` to the
+"Install anyway?" prompt without the user's explicit instruction.

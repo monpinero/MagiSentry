@@ -1,0 +1,22 @@
+{
+  "_comment": "Continue.dev config snippet. Merge into ~/.continue/config.json. Adds a /scan-install slash command and a custom command users (or the Continue agent) can invoke instead of pip/npm. The universal shell shim is still the hard guarantee against bypass.",
+  "customCommands": [
+    {
+      "name": "scan-install",
+      "description": "Install a Python or JS package through MagiSentry scanner",
+      "prompt": "Install the package the user just requested by running EXACTLY one of:\n  magisentry pip install <package>\n  magisentry npm install <package>\nNever fall back to raw pip/npm. If MagiSentry reports a THREAT, surface its output and wait for explicit user confirmation before retrying with `--allow`."
+    }
+  ],
+  "slashCommands": [
+    {
+      "name": "magisentry",
+      "description": "Scan and install a package",
+      "step": "scan-install"
+    }
+  ],
+  "rules": [
+    "When installing any Python or JavaScript package, always use `magisentry pip install ...` or `magisentry npm install ...` — never call pip/npm/yarn directly.",
+    "For requirements.txt, use `magisentry pip install -r requirements.txt` so each line is scanned individually.",
+    "If MagiSentry exits with a non-zero status, do NOT auto-retry with --force or similar — escalate to the user."
+  ]
+}
