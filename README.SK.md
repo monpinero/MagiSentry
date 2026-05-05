@@ -4,9 +4,9 @@
 Automaticky skenuje Python (pip), JavaScript (npm/yarn), rozšírenia VS Code a Dockerfile cez 10-krokový skener *predtým* ako sa čokoľvek nainštaluje alebo zostaví — aby tvoj AI agent nemohol byť oklamaný do spustenia škodlivého kódu.
 
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
-[![i18n: EN | SK](https://img.shields.io/badge/i18n-EN%20%7C%20SK-orange.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/monpinero/MagiSentry/blob/main/LICENSE)
+[![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/monpinero/MagiSentry)
+[![i18n: EN | SK](https://img.shields.io/badge/i18n-EN%20%7C%20SK-orange.svg)](https://github.com/monpinero/MagiSentry)
 
 [🇬🇧 English version](README.md)
 
@@ -326,7 +326,7 @@ MagiSentry je navrhnutý tak, aby minimalizoval zdieľanie dát v cloude:
 
 ## Licencia
 
-MIT — pozri [LICENSE](LICENSE) pre podrobnosti.
+MIT — pozri [LICENSE](https://github.com/monpinero/MagiSentry/blob/main/LICENSE) pre podrobnosti.
 
 ---
 
