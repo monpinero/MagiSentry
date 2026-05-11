@@ -93,6 +93,13 @@ if ! grep -q "magisentry" "$SHELL_RC" 2>/dev/null; then
   echo 'export PATH="$HOME/.local/bin:$PATH"  # magisentry' >> "$SHELL_RC"
 fi
 
+# --- build initial integrity manifest ------------------------
+# `--yes` skips the interactive [y/N]; only the setup script may
+# use this flag, never an AI agent at runtime.
+echo ""
+echo "Building initial integrity manifest..."
+magisentry integrity update --yes || echo "[WARN] integrity manifest build returned non-zero status"
+
 echo ""
 echo "MagiSentry installed."
 echo "  Run:        source $SHELL_RC"

@@ -49,7 +49,14 @@ def run(ecosystem, package, config, t, ctx):
             can_retry=False,
         )
     try:
-        rules = yara.compile(filepath=str(RULES_FILE))
+        # Use `source=` (read the file in Python) instead of
+        # `filepath=` because yara-python on Windows passes the path
+        # to the C library as a byte string in the system codepage —
+        # any non-ASCII character (e.g. "ň" in "Koreň") makes the
+        # underlying open() fail with ENOENT. Reading via pathlib +
+        # utf-8 sidesteps the issue entirely; YARA itself compiles
+        # from the in-memory source string.
+        rules = yara.compile(source=RULES_FILE.read_text(encoding="utf-8"))
     except Exception as e:
         return StepResult(
             status="FAILURE", step=STEP,

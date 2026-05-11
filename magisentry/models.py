@@ -36,6 +36,13 @@ class Config:
         "dockerfile_scan": True,
     })
 
+    # Dependency update prompt state. `dep_skip` records versions the
+    # user explicitly skipped — the menu won't re-offer them until a
+    # newer release lands. `dep_remind` stores ISO-8601 timestamps; we
+    # silence the menu for that pkg until `now >= dep_remind[pkg]`.
+    dep_skip: Dict[str, str] = field(default_factory=dict)
+    dep_remind: Dict[str, str] = field(default_factory=dict)
+
     # Legacy step keys → current keys. Loaded configs from before the
     # rename are migrated transparently in `from_dict`. Class-level so it
     # doesn't leak into `to_dict` / `asdict` output.
@@ -69,4 +76,6 @@ class Config:
         for k in cfg.steps:
             if k in steps:
                 cfg.steps[k] = bool(steps[k])
+        cfg.dep_skip = dict(d.get("dep_skip") or {})
+        cfg.dep_remind = dict(d.get("dep_remind") or {})
         return cfg

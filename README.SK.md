@@ -92,6 +92,7 @@ Každý balíček prechádza všetkými 8 krokmi v poradí. Technická chyba v n
 |---|---|
 | Skenovanie rozšírení VS Code | Open VSX + Marketplace + VT |
 | Analýza Dockerfile | lokálne |
+| Kontrola integrity | lokálne |
 
 Príkazy pozri v sekcii [Použitie](#použitie).
 
@@ -158,7 +159,7 @@ Setup skript nainštaluje základné závislosti (`magika`, `pip-audit`) a zareg
 Nainštaluj len to, čo potrebuješ:
 
 ```bash
-pip install magisentry[semgrep]   # Krok 7 — statická analýza kódu
+pip install magisentry[semgrep]   # Krok 7 — statická analýza kódu (Python 3.10+)
 pip install magisentry[yara]      # Krok 8 — zhoda vzorov
 pip install magisentry[all]       # všetko
 ```
@@ -175,6 +176,8 @@ magisentry pip install requests
 magisentry pip install "numpy==1.26.4"
 magisentry pip install -r requirements.txt
 ```
+
+> `pip3` a `python -m pip install` sú tiež automaticky zachytené.
 
 ### Balíčky — npm / yarn
 ```bash
@@ -208,6 +211,21 @@ magisentry audit
 
 Skenuje všetky závislosti nájdené v `pyproject.toml`, `requirements.txt` a `package.json` v aktuálnom adresári v jednom prechode. Užitočné pred commitom alebo nasadením.
 
+### Správa whitelist
+```bash
+magisentry whitelist list
+magisentry whitelist add pip:requests
+magisentry whitelist add npm:lodash
+magisentry whitelist remove pip:requests
+```
+
+### Kontrola integrity
+```bash
+magisentry integrity update
+```
+
+Spusti raz po inštalácii na inicializáciu manifestu integrity, a znova po úprave vlastných zdrojových súborov MagiSentry. Manifest je uložený lokálne na každom stroji.
+
 ### Odinštalovanie
 
 **Možnosť 1 — príkazový riadok (všetky platformy):**
@@ -229,6 +247,21 @@ setup_windows.bat        # zvoliť [2] Uninstall
 
 Obe možnosti odstránia adresár `~/.magisentry/`, vyčistia PATH a spustia `pip uninstall magisentry`.
 
+### Voliteľné závislosti
+
+Voliteľné komponenty skenovania MagiSentry sa neodstránia automaticky. Na ich manuálne odinštalovanie:
+
+```bash
+pip uninstall semgrep        # Krok 7 — statická analýza kódu
+pip uninstall yara-python    # Krok 8 — zhoda vzorov
+```
+
+Základné závislosti (magika, pip-audit) sú zdieľané komponenty a zámerne zostávajú nainštalované. Odstráň ich manuálne len ak si istý, že na nich nezávisí nič iné v tvojom systéme:
+
+```bash
+pip uninstall magika pip-audit winotify
+```
+
 ---
 
 Pri detekcii hrozby terminál zobrazí prehľadnú správu a čaká na tvoje potvrdenie:
@@ -238,7 +271,10 @@ keď je možné zopakovať  (fail_safe)    →   [R] Zopakovať   [S] Preskoči�
 keď nie je možné zopakovať (fail_secure) →                 [S] Preskočiť   [A] Zrušiť
 ```
 
-Balíček môžeš tiež natrvalo zaradiť na whitelist, aby sa budúce varovania potlačili.
+Balíček môžeš tiež zaradiť na whitelist, aby sa budúce varovania potlačili:
+```bash
+magisentry whitelist add pip:nazov-balicka
+```
 
 ---
 
@@ -252,7 +288,7 @@ MagiSentry ukladá všetky svoje dáta v jedinom adresári:
 ~/.magisentry/
 ├── config.json       # konfigurácia skenera
 ├── counters.json     # štatistiky skenovania
-└── shims/            # shellové wrappery zachytávajúce príkazy pip/npm
+└── bin/              # shellové wrappery zachytávajúce príkazy pip/npm
 ```
 
 Spustením `magisentry uninstall` sa tento adresár automaticky odstráni na všetkých platformách.

@@ -122,6 +122,52 @@ def _persist_vt_key(key: str) -> None:
     # mutating it; the wizard prints the export line for the user instead.
 
 
+def _install_optional_extra(extra: str, check_import: str,
+                            t: Translator) -> bool:
+    """Verify an optional extra is importable; if not, offer to install it.
+
+    `extra` matches the setup.py `extras_require` key (e.g. "semgrep",
+    "yara"). `check_import` is the top-level module name we try to
+    import to confirm the install (e.g. "semgrep", "yara"). Returns
+    True only when the module can actually be imported after this
+    call — declining the prompt or a pip failure both return False
+    so the caller can flip the corresponding step OFF and avoid a
+    runtime failure on the very first scan."""
+    try:
+        __import__(check_import)
+        return True
+    except ImportError:
+        pass
+
+    print(t.t("wizard_extra_not_installed", extra=extra))
+    answer = _ask(t.t("wizard_extra_install_prompt", extra=extra))
+    if not _yes(answer, default_yes=True):
+        print(t.t("wizard_extra_skip", extra=extra))
+        return False
+
+    print(t.t("wizard_extra_installing", extra=extra))
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pip", "install", f"magisentry[{extra}]"],
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        print(t.t("wizard_extra_install_failed", extra=extra))
+        return False
+    if result.returncode != 0:
+        print(t.t("wizard_extra_install_failed", extra=extra))
+        return False
+    # Verify the module is now importable — pip success isn't enough
+    # if a constraint resolver picked a wheel for the wrong platform.
+    try:
+        __import__(check_import)
+    except ImportError:
+        print(t.t("wizard_extra_install_failed", extra=extra))
+        return False
+    print(t.t("wizard_extra_installed_ok", extra=extra))
+    return True
+
+
 def _vt_flow(t: Translator) -> bool:
     """Returns True if step5 should remain enabled."""
     has_account = _yes(_ask(t.t("wizard_vt_account_prompt")), default_yes=False)
@@ -169,6 +215,17 @@ def run_wizard() -> Config:
 
         if key == "virustotal" and enabled:
             cfg.steps[key] = _vt_flow(t)
+        # Semgrep and Yara are pip *extras*, not part of [core].
+        # If the user enables them but the binary is missing, offer
+        # to `pip install magisentry[<extra>]` right here so the
+        # first scan doesn't immediately FAILURE on a missing
+        # dependency. Decline / install-fail → silently flip OFF.
+        if key in ("semgrep", "yara") and enabled:
+            check_mod = "yara" if key == "yara" else "semgrep"
+            available = _install_optional_extra(key, check_mod, t)
+            if not available:
+                cfg.steps[key] = False
+                print(t.t("wizard_extra_disabled", step=t.t(name_k)))
         print()
 
     path = save(cfg)

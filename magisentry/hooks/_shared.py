@@ -269,9 +269,18 @@ def run_for_packages(ecosystem: str, packages: List[str]) -> int:
     for pkg in expanded:
         if not pkg:
             continue
-        if pkg.startswith(("git+", "http://", "https://")):
-            # VCS / direct URL installs are out of scope for local-file
-            # scanning and not safe to treat as remote PyPI specs.
+        if pkg.startswith(("git+https://", "git+http://",
+                           "git+ssh://",   "git+git://")):
+            # git VCS install — scanner handles steps 3–8 (no
+            # PyPI/OSV identity to query, but we can still vet the
+            # downloaded artefact).
+            rc = scanner_main([eco, "install", pkg])
+            worst = max(worst, rc)
+            if rc == 2:
+                break
+            continue
+        if pkg.startswith(("http://", "https://")):
+            # Plain URL install (not git+) — out of scope for now.
             continue
         if eco == "pip":
             kind = classify_arg(pkg)

@@ -23,10 +23,16 @@ rule credential_theft
         $secret3   = "SECRET"               ascii nocase
         $secret4   = "TOKEN"                ascii nocase
         $secret5   = "PASSWORD"             ascii nocase
-        $net_py1   = "urllib.request"       ascii
-        $net_py2   = "requests.post"        ascii
-        $net_py3   = "http.client"          ascii
-        $net_py4   = "socket.create_connection" ascii
+        // Tightened from "urllib.request" / "http.client" /
+        // "socket.create_connection". Those matched legitimate
+        // imports inside networking libs themselves (e.g.
+        // requests/utils.py uses http.client and socket internally
+        // and tripped this rule). The current strings target
+        // explicit exfiltration call shapes only — bare module
+        // names alone are too noisy.
+        $net_py1   = "urllib.request.urlopen" ascii
+        $net_py2   = "requests.post"          ascii
+        $net_py3   = "requests.get"           ascii
         $net_js1   = "fetch("               ascii
         $net_js2   = "https.request"        ascii
         $net_js3   = "axios."               ascii

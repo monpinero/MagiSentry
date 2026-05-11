@@ -21,7 +21,7 @@ LONG_DESCRIPTION = README.read_text(encoding="utf-8") if README.exists() else (
 
 setup(
     name="magisentry",
-    version="1.0.0",
+    version="1.0.1",
     description="Supply-chain security scanner for AI coding agents (pip + npm)",
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
@@ -42,12 +42,15 @@ setup(
     include_package_data=True,
 
     install_requires=[
-        "magika>=1.0.0",
-        "pip-audit>=2.0.0",
+        # Pinned to exact versions for v1.0.1 — supply-chain hygiene.
+        # Bumping is a deliberate release-time decision, never an
+        # accidental side-effect of `pip install -U`.
+        "magika==1.0.2",
+        "pip-audit==2.10.0",
         # winotify is the Windows toast backend. The platform marker
         # ensures pip skips it on Linux / macOS (where notify-send and
         # osascript are used instead) — clean and safe everywhere.
-        "winotify>=1.0; sys_platform=='win32'",
+        "winotify==1.1.0; sys_platform=='win32'",
     ],
     extras_require={
         # `core` is intentionally empty — provides a stable name for
@@ -55,9 +58,14 @@ setup(
         "core": [],
         # Optional sub-steps. Without them the corresponding scan
         # returns FAILURE/no-retry so fail-secure mode prompts Skip.
-        "semgrep": ["semgrep>=1.0.0"],
-        "yara": ["yara-python>=4.3.0"],
-        "all": ["semgrep>=1.0.0", "yara-python>=4.3.0"],
+        # semgrep 1.161.0 and earlier pin `tomli~=2.0.1`, which clashes
+        # with pip-audit 2.10.0's `tomli>=2.2.1`. 1.162.0 bumped semgrep
+        # to `tomli~=2.4.0` — first version that resolves cleanly.
+        # Lower-bound only so pip can move forward as semgrep ships
+        # bug fixes; the floor guarantees no tomli conflict.
+        "semgrep": ["semgrep>=1.162.0"],
+        "yara": ["yara-python==4.5.4"],
+        "all": ["semgrep>=1.162.0", "yara-python==4.5.4"],
     },
 
     entry_points={
