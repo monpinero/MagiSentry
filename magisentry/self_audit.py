@@ -99,11 +99,16 @@ def _newer(a: str, b: str) -> bool:
         return False
 
 
-def audit() -> Tuple[List[str], List[str]]:
-    """Return (cve_warnings, update_suggestions). Each is a list of strings
-    already formatted for printing — caller decides how to surface them."""
+def audit() -> Tuple[List[str], List[Tuple[str, str, str]]]:
+    """Return (cve_warnings, updates).
+
+    `cve_warnings` is a list of pre-formatted strings ready to print.
+    `updates` is a list of (pkg, installed, latest) tuples — structured
+    so the caller (scanner.py) can drive an interactive menu instead of
+    a flat printout. The split exists because CVE warnings are pure
+    information while updates are an action point."""
     cve_warnings: List[str] = []
-    updates: List[str] = []
+    updates: List[Tuple[str, str, str]] = []
     for dep in DEPS:
         installed = _installed_version(dep)
         if not installed:
@@ -115,13 +120,46 @@ def audit() -> Tuple[List[str], List[str]]:
             )
         latest = _pypi_latest(dep)
         if latest and _newer(latest, installed):
-            updates.append(f"{dep}: {installed} -> {latest}")
+            updates.append((dep, installed, latest))
     return cve_warnings, updates
 
 
-def print_audit(t: Translator, config=None) -> None:
-    """Run the audit and print findings via Translator. Silent if all clean."""
-    cves, updates = audit()
+def should_show_update(pkg: str, latest: str, config=None) -> bool:
+    """Filter for `dep_skip` / `dep_remind` config state.
+
+    `dep_skip[pkg] == latest`: user said "Skip this version" — silence
+    the menu for THIS exact version (a newer one re-triggers the prompt).
+
+    `dep_remind[pkg]` is an ISO timestamp; suppress until `now >= that`.
+    A malformed timestamp is treated as expired so a corrupt config
+    can't permanently silence the menu."""
+    if config is None:
+        return True
+    skip = getattr(config, "dep_skip", {})
+    if skip.get(pkg) == latest:
+        return False
+    remind = getattr(config, "dep_remind", {})
+    if pkg in remind:
+        import datetime
+        try:
+            remind_after = datetime.datetime.fromisoformat(remind[pkg])
+            if datetime.datetime.now() < remind_after:
+                return False
+        except (ValueError, TypeError):
+            pass
+    return True
+
+
+def print_audit(t: Translator, config=None
+                ) -> List[Tuple[str, str, str]]:
+    """Run the audit, surface CVE warnings, return pending updates.
+
+    CVE warnings are printed inline (informational, no user action).
+    Updates are RETURNED, not printed — the caller (scanner.main) hands
+    them to the [1]-[4] interactive menu. Updates suppressed by
+    `dep_skip` / `dep_remind` are filtered out here so the scanner
+    never sees them. Silent if everything is clean."""
+    cves, all_updates = audit()
     if cves:
         print()
         print(t.t("self_audit_cve_header"))
@@ -133,8 +171,8 @@ def print_audit(t: Translator, config=None) -> None:
             notify_dep_cve(t, cves, config)
         except Exception:
             pass
-    if updates:
-        print(t.t("self_audit_updates_header"))
-        for line in updates:
-            print("    " + line)
-        print("  " + t.t("self_audit_updates_recommend"))
+    return [
+        (pkg, installed, latest)
+        for pkg, installed, latest in all_updates
+        if should_show_update(pkg, latest, config)
+    ]

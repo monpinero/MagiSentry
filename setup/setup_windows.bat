@@ -9,6 +9,14 @@ rem  3. Runs the setup wizard (language, mode, per-step opt-ins,
 rem     VirusTotal key registration).
 rem  4. Hands off to install_hooks.py for AI-tool integration.
 rem ============================================================
+
+rem Switch CMD to UTF-8 so Slovak characters (š, č, ľ, á, ú, etc.)
+rem render correctly in the uninstall menu, the "Vas vyber" prompt,
+rem and the final pause message. Default Windows code page (cp852 /
+rem cp1250) mangles them. `>nul` hides the "Active code page: 65001"
+rem banner — the user shouldn't see implementation noise.
+chcp 65001 >nul
+
 setlocal ENABLEDELAYEDEXPANSION
 
 echo.
@@ -109,8 +117,20 @@ if errorlevel 1 (
   echo [WARN] Hook installer exited with non-zero status.
 )
 
+rem --- 4. Build initial integrity manifest ------------------------
+rem `--yes` skips the interactive [y/N]; only the setup script may
+rem use this flag, never an AI agent at runtime.
+echo.
+echo Building initial integrity manifest...
+magisentry integrity update --yes
+if errorlevel 1 (
+  echo [WARN] Integrity manifest build returned non-zero status.
+)
+
 echo.
 echo === Done. Open a NEW terminal, then try: magisentry pip install requests ===
 echo.
+echo Inštalácia dokončená. Stlač ľubovoľnú klávesu pre zatvorenie...
+pause >nul
 endlocal
 exit /b 0

@@ -61,6 +61,24 @@ def run(ecosystem, package, config, t, ctx):
             label = (getattr(out, "ct_label", None)
                      or getattr(out, "label", None) or "")
         label = str(label).lower()
+        # Legitimate wheel CLI executables live at
+        #   {pkg}-{ver}.data/scripts/{name}.exe
+        # which is the standard `console_scripts` install path. Allow
+        # ONLY when the executable's stem matches the package's own
+        # name — `magika.exe` inside `magika-1.0.3.data/scripts/` is
+        # fine; `svchost.exe` in the same directory is still a threat.
+        # Compromised packages are caught earlier by OSV / pip-audit /
+        # VirusTotal — step 6 is about file *contents*, not reputation.
+        parts = path.parts
+        if "scripts" in parts:
+            idx = parts.index("scripts")
+            if idx > 0 and parts[idx - 1].endswith(".data"):
+                data_dir = parts[idx - 1]              # "magika-1.0.3.data"
+                pkg_base = data_dir.split("-")[0].lower()
+                exe_stem = path.stem.lower()
+                if exe_stem == pkg_base:
+                    continue  # legitimate CLI tool — skip
+                # Name mismatch in scripts/ → fall through to SUSPICIOUS
         if label in SUSPICIOUS:
             threats.append((label, path.relative_to(extracted_path)))
             if len(threats) >= 5:

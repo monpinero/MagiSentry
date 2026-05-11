@@ -92,6 +92,7 @@ Every package passes through all 8 steps in sequence. A technical failure in any
 |---|---|
 | VS Code extension scan | Open VSX + Marketplace + VT |
 | Dockerfile analysis | local |
+| Integrity check | local |
 
 See [Usage](#usage) for commands.
 
@@ -158,7 +159,7 @@ The setup script installs the core dependencies (`magika`, `pip-audit`) and regi
 Install only what you need:
 
 ```bash
-pip install magisentry[semgrep]   # Step 7 — static code analysis
+pip install magisentry[semgrep]   # Step 7 — static code analysis (Python 3.10+)
 pip install magisentry[yara]      # Step 8 — pattern matching
 pip install magisentry[all]       # everything
 ```
@@ -175,6 +176,8 @@ magisentry pip install requests
 magisentry pip install "numpy==1.26.4"
 magisentry pip install -r requirements.txt
 ```
+
+> `pip3` and `python -m pip install` are also intercepted automatically.
 
 ### Packages — npm / yarn
 ```bash
@@ -208,6 +211,21 @@ magisentry audit
 
 Scans all dependencies found in `pyproject.toml`, `requirements.txt`, and `package.json` in the current directory in a single pass. Useful before committing or deploying.
 
+### Whitelist management
+```bash
+magisentry whitelist list
+magisentry whitelist add pip:requests
+magisentry whitelist add npm:lodash
+magisentry whitelist remove pip:requests
+```
+
+### Integrity check
+```bash
+magisentry integrity update
+```
+
+Run this once after installation to initialise the integrity manifest, and again after modifying MagiSentry's own source files. The manifest is stored locally per machine.
+
 ### Uninstall
 
 **Option 1 — command line (all platforms):**
@@ -229,6 +247,21 @@ setup_windows.bat        # choose [2] Uninstall
 
 Both options remove `~/.magisentry/` config directory, clean up PATH, and run `pip uninstall magisentry`.
 
+### Optional dependencies
+
+MagiSentry's optional scan components are not removed automatically. To uninstall them manually:
+
+```bash
+pip uninstall semgrep        # Step 7 — static code analysis
+pip uninstall yara-python    # Step 8 — pattern matching
+```
+
+Core dependencies (magika, pip-audit) are shared components and are intentionally left in place. Remove them manually only if you are sure nothing else on your system depends on them:
+
+```bash
+pip uninstall magika pip-audit winotify
+```
+
 ---
 
 When a threat is detected, the terminal displays a clear report and waits for your confirmation before proceeding:
@@ -238,7 +271,10 @@ when retry is possible    (fail_safe)    →   [R] Retry   [S] Skip   [A] Abort
 when retry is not possible (fail_secure) →               [S] Skip   [A] Abort
 ```
 
-You can also whitelist a package permanently to suppress future warnings.
+You can also whitelist a package to suppress future warnings:
+```bash
+magisentry whitelist add pip:package-name
+```
 
 ---
 
@@ -252,7 +288,7 @@ MagiSentry stores all its data in a single directory:
 ~/.magisentry/
 ├── config.json       # scanner configuration
 ├── counters.json     # scan statistics
-└── shims/            # shell wrappers that intercept pip/npm commands
+└── bin/              # shell wrappers that intercept pip/npm commands
 ```
 
 Running `magisentry uninstall` removes this directory automatically on all platforms.

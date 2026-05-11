@@ -63,6 +63,169 @@ def _emit_failsecure_stderr(t: Translator, package: str) -> None:
     sys.stderr.flush()
 
 
+# ---------- dependency update menu ----------
+
+def _pip_upgrade(pkg: str, version: str, t: Translator) -> bool:
+    """Run `pip install --upgrade <pkg>==<version>`. Returns True on
+    success. Errors land on stderr but never propagate — the menu is
+    advisory, never a hard scan failure."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, "-m", "pip", "install",
+             "--upgrade", f"{pkg}=={version}"],
+            check=False,
+        )
+        if proc.returncode == 0:
+            print(t.t("dep_update_done", pkg=pkg, version=version))
+            return True
+        sys.stderr.write(
+            f"[MagiSentry] pip upgrade failed (exit {proc.returncode})\n"
+        )
+        return False
+    except (OSError, subprocess.SubprocessError) as exc:
+        sys.stderr.write(f"[MagiSentry] pip upgrade failed: {exc}\n")
+        return False
+
+
+def _handle_dep_updates(updates: list, config: Config, t: Translator) -> None:
+    """Offer the [1]–[4] menu for each pending dep update.
+
+    Non-blocking: never raises, never affects scan exit codes. EOFError
+    or KeyboardInterrupt at the prompt breaks out of the loop silently
+    so an AI agent with closed stdin can't be coerced into picking a
+    default action. Any input other than 1/2/3/4 is treated as
+    "remind me next time" — we don't write to config and move on."""
+    import datetime
+    for pkg, installed, latest in updates:
+        try:
+            print()
+            print(t.t("dep_update_available",
+                      pkg=pkg, cur=installed, new=latest))
+            print(t.t("dep_update_menu"))
+            choice = _ask("").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+
+        if choice == "1":
+            # Update with full scan — reuse the standard 8-step pipeline
+            # for our own deps. If it finds a threat, refuse to upgrade.
+            print(t.t("dep_update_scanning", pkg=pkg, version=latest))
+            rc = scan("pip", f"{pkg}=={latest}", config, t)
+            if rc == EXIT_OK:
+                _pip_upgrade(pkg, latest, t)
+            else:
+                print(t.t("dep_update_blocked", pkg=pkg))
+
+        elif choice == "2":
+            _pip_upgrade(pkg, latest, t)
+
+        elif choice == "3":
+            config.dep_skip[pkg] = latest
+            cfg_mod.save(config)
+            print(t.t("dep_update_skipped", pkg=pkg, version=latest))
+
+        elif choice == "4":
+            remind_at = (datetime.datetime.now() +
+                         datetime.timedelta(hours=24)).isoformat(
+                             timespec="seconds")
+            config.dep_remind[pkg] = remind_at
+            cfg_mod.save(config)
+            print(t.t("dep_update_remind_later", pkg=pkg))
+        # Empty input / other: silent skip — don't persist anything.
+
+
+# ---------- integrity check ----------
+
+def _check_integrity(t: Translator) -> None:
+    """Warn on stderr if any source file changed since the last manifest.
+
+    Non-blocking: never raises, never affects exit codes. Same pattern
+    as `_check_path_order` — security signals belong on stderr where
+    AI agent harnesses surface them, but the scan itself proceeds so
+    the user is never locked out of their own tool."""
+    try:
+        from .integrity import check, has_manifest
+        if not has_manifest():
+            sys.stderr.write(
+                "[MagiSentry] No integrity manifest found. "
+                "Run: magisentry integrity update\n"
+            )
+            sys.stderr.flush()
+            return
+        changed = check()
+        if changed:
+            sys.stderr.write("\n" + t.t("integrity_warning") + "\n")
+            for f in changed:
+                sys.stderr.write("  " + t.t("integrity_file_changed", file=f) + "\n")
+            sys.stderr.write("  " + t.t("integrity_run_update") + "\n\n")
+            sys.stderr.flush()
+    except Exception:
+        pass  # Integrity check failure must never block scans.
+
+
+def _handle_integrity_command(args: List[str], config: Optional[Config],
+                              t: Translator) -> int:
+    """`magisentry integrity update [--yes]`.
+
+    Re-blesses the manifest after a legitimate code change. The [y/N]
+    prompt is what stops an AI agent from silently re-hashing a
+    tampered tree — closed stdin → cancel. `--yes` exists ONLY for
+    the setup scripts (first-install bootstrap)."""
+    from .integrity import build_manifest, save_manifest, _collect_files
+    yes = "--yes" in args
+    args = [a for a in args if a != "--yes"]
+    if not args or args[0] != "update":
+        print(t.t("integrity_usage"))
+        return EXIT_TECHNICAL
+
+    files = _collect_files()
+    print(t.t("integrity_update_confirm", count=len(files)))
+    if not yes:
+        try:
+            answer = input("[y/N] ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer != "y":
+            print(t.t("integrity_update_cancelled"))
+            return EXIT_OK
+
+    print(t.t("integrity_update_scanning"))
+    hashes = build_manifest()
+    for label in sorted(hashes):
+        print(f"  {label}")
+    save_manifest(hashes)
+    from .integrity import MANIFEST_PATH
+    print(t.t("integrity_update_done",
+              count=len(hashes), path=str(MANIFEST_PATH)))
+    return EXIT_OK
+
+
+# ---------- PATH order check ----------
+
+def _check_path_order() -> None:
+    """Warn if the MagiSentry shim dir is not the first `pip` on PATH.
+
+    A correctly-installed shim makes EVERY `pip install` go through us
+    first. If `which pip` resolves to a different directory, an AI agent
+    can call the real pip and bypass scanning entirely. Non-blocking —
+    we just emit a stderr warning so the user notices and fixes PATH."""
+    shim_pip = shutil.which("pip")
+    if shim_pip is None:
+        return
+    shim_dir = str(Path(shim_pip).parent.resolve())
+    ms_data = Path.home() / ".magisentry" / "bin"
+    if not ms_data.exists():
+        return
+    ms_dir = str(ms_data.resolve())
+    if shim_dir != ms_dir:
+        sys.stderr.write(
+            "[MagiSentry WARNING] pip in PATH is not the MagiSentry "
+            f"shim.\n  Found: {shim_pip}\n  Expected shim dir: "
+            f"{ms_data}\n  An AI agent may bypass scanning.\n"
+        )
+        sys.stderr.flush()
+
+
 # ---------- update check ----------
 
 def _check_for_update(t: Translator, config: Optional[Config] = None) -> None:
@@ -89,7 +252,14 @@ def _check_for_update(t: Translator, config: Optional[Config] = None) -> None:
 def _ask(prompt: str) -> str:
     sys.stdout.write(prompt + " ")
     sys.stdout.flush()
-    return sys.stdin.readline().strip()
+    try:
+        return sys.stdin.readline().strip()
+    except KeyboardInterrupt:
+        # Ctrl+C mid-prompt should land softly: empty answer is treated
+        # as Abort by every caller, and main()'s outer handler then
+        # prints the friendly interrupt message.
+        sys.stdout.write("\n")
+        return ""
 
 
 def _print_result(t: Translator, n: int, name: str, result: StepResult) -> None:
@@ -188,6 +358,11 @@ def _run_pipeline(steps, ecosystem: str, package: str, ctx: dict,
 
 
 def scan(ecosystem: str, package: str, config: Config, t: Translator) -> int:
+    # `git+https://...` (and friends) needs a different pipeline:
+    # no PyPI/OSV identity, step 4 has to invoke pip download itself.
+    # Route there before whitelisting / starting the standard banner.
+    if ecosystem == "pip" and _is_git_url(package):
+        return scan_git_url(package, config, t)
     if cfg_mod.is_whitelisted(ecosystem, package):
         print(t.t("whitelist_skipping", package=package))
         return EXIT_OK
@@ -253,6 +428,30 @@ LOCAL_FILE_STEPS = [
     ("semgrep", step7_semgrep, "step7_name"),
     ("yara", step7_yara, "step7_yara_name"),
 ]
+
+
+# Steps that run for `git+https://` and friends. Steps 1 (PyPI metadata)
+# and 2 (OSV) are skipped because a git URL has no registry identity to
+# query. Step 4 (isolated download) runs INLINE in scan_git_url() — pip
+# download is invoked directly there to fetch the URL into a tempdir.
+# Step 3 (pip-audit) FAILURE is treated as a known limitation (no PyPI
+# metadata to feed the auditor) and is non-blocking; an actual THREAT
+# from pip-audit still blocks via the standard prompt.
+GIT_URL_STEPS = [
+    ("pip_audit",  step3_pipaudit,   "step3_name"),
+    ("virustotal", step5_virustotal, "step5_name"),
+    ("magika",     step6_magika,     "step6_name"),
+    ("semgrep",    step7_semgrep,    "step7_name"),
+    ("yara",       step7_yara,       "step7_yara_name"),
+]
+
+_GIT_STEP_DISPLAY_N = {
+    "pip_audit":  3,
+    "virustotal": 5,
+    "magika":     6,
+    "semgrep":    7,
+    "yara":       8,
+}
 
 
 def _unpack_to_temp(archive: Path) -> Path:
@@ -346,6 +545,170 @@ def scan_local_file(ecosystem: str, archive_path: str,
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+# ---------- git+URL scan (steps 3+4+5+6+7+8, no PyPI/OSV) ----------
+
+_GIT_URL_PREFIXES = (
+    "git+https://", "git+http://", "git+ssh://", "git+git://",
+)
+
+
+def _is_git_url(spec: str) -> bool:
+    return spec.startswith(_GIT_URL_PREFIXES)
+
+
+def scan_git_url(url: str, config: Config, t: Translator) -> int:
+    """Scan a `git+...://` install spec through steps 3–8.
+
+    Pipeline shape:
+      - Steps 1 + 2 (registry metadata, OSV) skipped — git URLs have
+        no PyPI identity to query.
+      - Step 4 (isolated download) runs INLINE here via `pip download`
+        because step4_download.py expects a registry name+version.
+      - Steps 3, 5–8 use the standard module dispatch with the same
+        threat / failure semantics as `scan()` — except that a
+        FAILURE in step 3 (pip-audit) is treated as a known
+        limitation (git repos rarely ship the PyPI metadata pip-audit
+        needs) and is non-blocking even in fail-secure mode. An
+        actual THREAT from pip-audit still blocks normally.
+    """
+    print(t.t("scan_git_header", url=url))
+    print(t.t("scan_git_skipping_steps"))
+
+    pip_tmpdir = Path(tempfile.mkdtemp(prefix="magisentry_git_"))
+    extracted: Optional[Path] = None
+    threats: List[StepResult] = []
+    failsecure_blocked = False
+    aborted = False
+    try:
+        # ---- Step 4: isolated download via `pip download` ----
+        print()
+        print(t.t("scan_step_running", n=4, total=8,
+                  name=t.t("step4_name")))
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-m", "pip", "download",
+                 "--no-deps", "--dest", str(pip_tmpdir), url],
+                capture_output=True, text=True, timeout=600,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            print("  -> " + t.t("scan_git_download_failed"))
+            sys.stderr.write(
+                f"[MagiSentry] pip download crashed for {url}: {exc}\n"
+            )
+            return EXIT_TECHNICAL if config.mode == "failsecure" else EXIT_OK
+
+        if proc.returncode != 0:
+            print("  -> " + t.t("scan_git_download_failed"))
+            sys.stderr.write(
+                f"[MagiSentry] pip download failed for {url}\n"
+                f"{(proc.stderr or '').strip()}\n"
+            )
+            return EXIT_TECHNICAL if config.mode == "failsecure" else EXIT_OK
+
+        # `pip download` produces .whl when build succeeds; falls back
+        # to .tar.gz / .zip otherwise. Pick the first archive we
+        # recognise — there's only ever one with --no-deps.
+        archives = [
+            f for f in pip_tmpdir.iterdir()
+            if f.is_file() and (
+                f.suffix in (".whl", ".zip", ".egg")
+                or f.name.endswith(".tar.gz")
+                or f.name.endswith(".tgz")
+            )
+        ]
+        if not archives:
+            print("  -> " + t.t("scan_git_no_archive"))
+            return EXIT_TECHNICAL if config.mode == "failsecure" else EXIT_OK
+        archive = archives[0]
+        print(f"  -> OK ({archive.name})")
+
+        # Unpack once, reuse for steps 5–8 + step 3.
+        try:
+            extracted = _unpack_to_temp(archive)
+        except (OSError, ValueError, zipfile.BadZipFile, tarfile.TarError) as e:
+            print(t.t("scan_local_file_unpack_failed",
+                      path=str(archive), error=str(e)[:200]))
+            return EXIT_TECHNICAL if config.mode == "failsecure" else EXIT_OK
+
+        # Same ctx contract as step4_download / scan_local_file: VT
+        # hashes `archive`, Magika/Semgrep/Yara walk `extracted`, and
+        # `local_archive` tells step3 to feed pip-audit a file path
+        # rather than a synthesised name==version.
+        ctx: dict = {
+            "archive": archive,
+            "extracted": extracted,
+            "local_archive": archive,
+        }
+
+        # ---- Steps 3, 5–8 ----
+        for config_key, mod, name_key in GIT_URL_STEPS:
+            if not config.steps.get(config_key, True):
+                continue
+            display_n = _GIT_STEP_DISPLAY_N[config_key]
+            step_name = t.t(name_key)
+            print()
+            print(t.t("scan_step_running", n=display_n, total=8,
+                      name=step_name))
+            result = _run_step(mod, "pip", url, config, t, ctx)
+            _print_result(t, display_n, step_name, result)
+
+            if result.status == "THREAT":
+                threats.append(result)
+                continue
+
+            if result.status == "FAILURE":
+                if config_key == "pip_audit":
+                    # Expected for git URLs — pip-audit needs PyPI
+                    # metadata which a bare git checkout typically
+                    # lacks. Surface it as info, never block.
+                    print("  " + t.t("scan_git_pipaudit_no_metadata"))
+                    continue
+                final = _handle_failure(
+                    t, config, result,
+                    lambda: _run_step(mod, "pip", url, config, t, ctx),
+                )
+                if final is None:
+                    aborted = True
+                    break
+                if final.status == "THREAT":
+                    threats.append(final)
+                elif final.status == "FAILURE" and config.mode == "failsecure":
+                    failsecure_blocked = True
+    finally:
+        if extracted is not None:
+            shutil.rmtree(extracted, ignore_errors=True)
+        shutil.rmtree(pip_tmpdir, ignore_errors=True)
+
+    # ---- Standard threat / fail-secure post-processing ----
+    if aborted:
+        print(t.t("scan_user_abort"))
+        return EXIT_THREAT if threats else EXIT_TECHNICAL
+
+    if threats:
+        print()
+        print(t.t("threat_summary_header"))
+        for tr in threats:
+            print("  - " + tr.message)
+        ans = _ask(t.t("scan_threat_continue_prompt")).lower()
+        if ans not in ("y", "yes", "a", "ano", "áno"):
+            print(t.t("scan_blocked_threat"))
+            _emit_threat_stderr(t, url, threats)
+            try:
+                from .notifier import notify_threat
+                notify_threat(t, url, threats, config)
+            except Exception:
+                pass
+            return EXIT_THREAT
+
+    if failsecure_blocked:
+        print(t.t("scan_blocked_failure_secure"))
+        _emit_failsecure_stderr(t, url)
+        return EXIT_TECHNICAL
+
+    print(t.t("scan_completed_ok"))
+    return _do_install("pip", url, t)
+
+
 # ---------- single-step scanners (step 8 / step 9) ----------
 
 def _scan_single_step(ecosystem: str, target: str, config: Config,
@@ -425,6 +788,73 @@ def _resolve_step_key(key: str) -> Optional[str]:
     return Config.LEGACY_KEY_MAP.get(key)
 
 
+def _parse_whitelist_target(target: str) -> Optional[Tuple[str, str]]:
+    """Split `pip:requests` / `npm:lodash` into (ecosystem, package).
+    Returns None for malformed input so the caller can print cli_usage."""
+    if ":" not in target:
+        return None
+    ecosystem, _, pkg = target.partition(":")
+    ecosystem = ecosystem.strip().lower()
+    pkg = pkg.strip()
+    if ecosystem not in ("pip", "npm") or not pkg:
+        return None
+    return ecosystem, pkg
+
+
+def _handle_whitelist_command(args: List[str], config: Optional[Config],
+                              t: Translator) -> int:
+    """`magisentry whitelist [list | add <eco>:<pkg> | remove <eco>:<pkg>]`.
+
+    Every mutation goes through `config.whitelist_add` /
+    `whitelist_remove`, which gate the change behind a [y/N] prompt and
+    write a timestamped line to `~/.magisentry/config_audit.log`."""
+    force = "--force" in args
+    args = [a for a in args if a != "--force"]
+    if not args:
+        print(t.t("cli_usage"))
+        return EXIT_TECHNICAL
+    sub = args[0]
+
+    if sub == "list":
+        entries = cfg_mod.whitelist_entries()
+        if not entries:
+            print(t.t("whitelist_list_empty"))
+            return EXIT_OK
+        print(t.t("whitelist_list_header"))
+        for e in entries:
+            print(f"  - {e}")
+        return EXIT_OK
+
+    if sub in ("add", "remove") and len(args) >= 2:
+        parsed = _parse_whitelist_target(args[1])
+        if parsed is None:
+            print(t.t("cli_usage"))
+            return EXIT_TECHNICAL
+        ecosystem, package = parsed
+        entry = f"{ecosystem}:{package.split('==')[0].split('@')[0].lower()}"
+        if sub == "add":
+            result = cfg_mod.whitelist_add(ecosystem, package, force=force)
+            if result == "added":
+                print(t.t("whitelist_added", entry=entry))
+            elif result == "already_exists":
+                print(t.t("whitelist_already_exists", entry=entry))
+            else:  # cancelled
+                print(t.t("whitelist_cancelled"))
+            return EXIT_OK
+        # remove
+        result = cfg_mod.whitelist_remove(ecosystem, package, force=force)
+        if result == "removed":
+            print(t.t("whitelist_removed", entry=entry))
+        elif result == "not_found":
+            print(t.t("whitelist_not_found", entry=entry))
+        else:  # cancelled
+            print(t.t("whitelist_cancelled"))
+        return EXIT_OK
+
+    print(t.t("cli_usage"))
+    return EXIT_TECHNICAL
+
+
 def _handle_config_command(args: List[str], config: Optional[Config]) -> int:
     if config is None:
         config = Config.default()
@@ -432,37 +862,73 @@ def _handle_config_command(args: List[str], config: Optional[Config]) -> int:
     if not args:
         _print_config(config, t)
         return EXIT_OK
+    # Pull `--force` out of args before positional parsing so it can
+    # appear anywhere (e.g. `config --mode failsecure --force`). Forced
+    # writes skip the [y/N] prompt — intended for CI only.
+    force = "--force" in args
+    args = [a for a in args if a != "--force"]
+    if not args:
+        _print_config(config, t)
+        return EXIT_OK
     arg = args[0]
     if arg == "--wizard":
         run_wizard()
         return EXIT_OK
+    # Each branch must compute `change_desc` describing the diff for
+    # the audit log: "field: <old> → <new>". Without this an attacker
+    # (or a confused AI agent) editing config.json silently is
+    # invisible after the fact — the audit log is the only way back.
+    change_desc: str
     if arg == "--mode" and len(args) >= 2 and args[1] in ("failsafe", "failsecure"):
+        change_desc = f"mode: {config.mode} → {args[1]}"
         config.mode = args[1]
     elif arg == "--lang" and len(args) >= 2:
+        change_desc = f"language: {config.language} → {args[1]}"
         config.language = args[1]
     elif arg == "--notifications" and len(args) >= 2 and args[1] in ("on", "off"):
-        config.notifications = (args[1] == "on")
+        new_val = (args[1] == "on")
+        change_desc = (f"notifications: {'on' if config.notifications else 'off'}"
+                       f" → {args[1]}")
+        config.notifications = new_val
     elif arg == "--enable" and len(args) >= 2:
         canonical = _resolve_step_key(args[1])
         if canonical is None:
             print(t.t("cli_usage"))
             return EXIT_TECHNICAL
+        old = bool(config.steps.get(canonical, False))
+        change_desc = f"steps.{canonical}: {str(old).lower()} → true"
         config.steps[canonical] = True
     elif arg == "--disable" and len(args) >= 2:
         canonical = _resolve_step_key(args[1])
         if canonical is None:
             print(t.t("cli_usage"))
             return EXIT_TECHNICAL
+        old = bool(config.steps.get(canonical, False))
+        change_desc = f"steps.{canonical}: {str(old).lower()} → false"
         config.steps[canonical] = False
     else:
         print(t.t("cli_usage"))
         return EXIT_TECHNICAL
-    cfg_mod.save(config)
+    saved = cfg_mod.save_protected(config, change_desc, force=force)
+    if not saved:
+        print(t.t("config_cancelled"))
+        return EXIT_OK
     print(Translator(config.language).t("cli_config_saved"))
     return EXIT_OK
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    """CLI entry point. Catches Ctrl+C anywhere in the dispatch tree
+    so users see a clean message instead of a Python traceback. The
+    real work lives in `_main_impl` to keep this wrapper trivial."""
+    try:
+        return _main_impl(argv)
+    except KeyboardInterrupt:
+        sys.stderr.write("\n[MagiSentry] Prerušené používateľom.\n")
+        return EXIT_TECHNICAL
+
+
+def _main_impl(argv: Optional[List[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
 
     config = cfg_mod.load()
@@ -486,6 +952,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     if argv and argv[0] == "config" and len(argv) > 1 and argv[1] == "--wizard":
         run_wizard()
         return EXIT_OK
+    # `integrity update --yes` is part of setup scripts and must run
+    # BEFORE the first-run wizard check — otherwise a fresh install
+    # would force the user through wizard setup just to bless the
+    # initial manifest.
+    if argv and argv[0] == "integrity":
+        t = Translator(config.language if config else "en")
+        return _handle_integrity_command(argv[1:], config, t)
     if config is None and (not argv or argv[0] != "config"):
         # Either first run with no args, or an install command on a
         # machine without a config. Explicit `config --wizard` is handled
@@ -499,14 +972,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         return EXIT_OK
 
     t = Translator(config.language if config else "en")
+    _check_path_order()
+    _check_integrity(t)
     _check_for_update(t, config)
-    print_audit(t, config)
+    pending_updates = print_audit(t, config)
+    if pending_updates and config is not None:
+        _handle_dep_updates(pending_updates, config, t)
 
     cmd = argv[0]
     # `uninstall` is intercepted earlier (before the first-run wizard
     # check) so it doesn't reach this dispatch table.
     if cmd == "config":
         return _handle_config_command(argv[1:], config)
+    if cmd == "whitelist":
+        return _handle_whitelist_command(argv[1:], config, t)
     if cmd == "audit":
         from .audit import run_audit
         return run_audit(argv[1:], config, t)

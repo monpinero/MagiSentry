@@ -8,6 +8,7 @@ config toggle — that's why this file no longer mentions Yara.
 import json
 import shutil
 import subprocess
+from pathlib import Path
 
 from ..models import StepResult
 from ._common import split_pkg
@@ -35,7 +36,18 @@ def run(ecosystem, package, config, t, ctx):
         )
     try:
         proc = subprocess.run(
-            ["semgrep", "--config", "p/security-audit",
+            # `p/security-audit` is meant for auditing FIRST-PARTY code
+            # — it flags subprocess/eval/SSL patterns that legitimately
+            # appear in third-party libraries (requests, numpy, etc.)
+            # and produced a wall of false positives.
+            # `p/malicious-code` was tried as a replacement but returns
+            # HTTP 404 — the ruleset doesn't exist on the Semgrep
+            # registry. `p/supply-chain` is the published equivalent:
+            # purpose-built for supply-chain audits (post-install hooks
+            # calling out, base64-encoded payloads, etc.) rather than
+            # coding-style smells. `p/secrets` stays — hardcoded creds
+            # in a third-party package are always relevant.
+            ["semgrep", "--config", "p/supply-chain",
              "--config", "p/secrets",
              "--json", "--quiet", "--no-git-ignore", str(extracted)],
             capture_output=True, text=True, timeout=300,
@@ -69,11 +81,31 @@ def run(ecosystem, package, config, t, ctx):
         )
     findings = report.get("results") or []
     if findings:
+        # Surface the first three findings inline so the user sees
+        # WHICH rule fired in WHICH file at WHICH line — without that
+        # context "Semgrep flagged 2 patterns" is uninformative and
+        # most users dismiss it. Long absolute paths are truncated to
+        # the last two segments so the message stays readable.
+        details = []
+        for f in findings[:3]:
+            rule = f.get("check_id", "unknown-rule")
+            path = f.get("path", "?")
+            line = (f.get("start") or {}).get("line", "?")
+            try:
+                rel = "/".join(Path(path).parts[-2:])
+            except Exception:
+                rel = path
+            details.append(f"{rule} @ {rel}:{line}")
+        if len(findings) > 3:
+            details.append(f"... and {len(findings) - 3} more")
+        detail_str = "\n    ".join(details)
+
         name, _ = split_pkg(ecosystem, package)
         return StepResult(
             status="THREAT", step=STEP,
             message=t.t("step7_threat_pattern",
-                        count=len(findings), package=name),
+                        count=len(findings), package=name)
+                    + "\n    " + detail_str,
             can_retry=False,
         )
     return StepResult(status="OK", step=STEP)

@@ -91,7 +91,12 @@ def install_shell_shim() -> None:
     SHIM_DIR.mkdir(parents=True, exist_ok=True)
     src_dir = HOOKS_DIR / "shell"
     suffix = ".bat" if os.name == "nt" else ".sh"
-    for tool in ("pip", "npm", "yarn", "pnpm"):
+    # pip / pip3 / python(-m pip) cover every common Python install path
+    # AI agents reach for. python.bat / python3.sh fall through to the
+    # real interpreter for non-pip calls so unrelated scripts still run.
+    common_shims = ("pip", "pip3", "npm", "yarn", "pnpm")
+    platform_shims = ("python",) if os.name == "nt" else ("python3",)
+    for tool in common_shims + platform_shims:
         src = src_dir / f"{tool}{suffix}"
         dst = SHIM_DIR / f"{tool}{suffix}"
         if src.exists():
