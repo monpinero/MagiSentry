@@ -46,7 +46,7 @@ setup(
         # Bumping is a deliberate release-time decision, never an
         # accidental side-effect of `pip install -U`.
         "magika==1.0.2",
-        "pip-audit==2.10.0",
+        "pip-audit>=2.7.0",
         # winotify is the Windows toast backend. The platform marker
         # ensures pip skips it on Linux / macOS (where notify-send and
         # osascript are used instead) — clean and safe everywhere.
@@ -59,7 +59,7 @@ setup(
         # Optional sub-steps. Without them the corresponding scan
         # returns FAILURE/no-retry so fail-secure mode prompts Skip.
         # semgrep 1.161.0 and earlier pin `tomli~=2.0.1`, which clashes
-        # with pip-audit 2.10.0's `tomli>=2.2.1`. 1.162.0 bumped semgrep
+        # with pip-audit 2.7.0+'s `tomli>=2.2.1`. 1.162.0 bumped semgrep
         # to `tomli~=2.4.0` — first version that resolves cleanly.
         # Lower-bound only so pip can move forward as semgrep ships
         # bug fixes; the floor guarantees no tomli conflict.

@@ -1,0 +1,16 @@
+# MagiSentry — code ownership
+# Owner must approve all changes to protected files.
+
+# Core scanner and hooks — highest risk
+/magisentry/scanner.py          @monpinero
+/magisentry/hooks/              @monpinero
+/magisentry/steps/              @monpinero
+
+# Security rules
+/magisentry/rules/              @monpinero
+
+# CI/CD pipeline itself
+/.github/                       @monpinero
+
+# Dependencies — supply chain risk
+/setup.py                       @monpinero
