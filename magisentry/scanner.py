@@ -16,7 +16,7 @@ from .models import Config, StepResult
 from .self_audit import print_audit
 from .steps import (
     step1_metadata, step2_osv, step3_pipaudit, step4_download,
-    step5_virustotal, step6_magika, step7_semgrep, step7_yara,
+    step5_virustotal, step6_magika, step7_semgrep, step8_yara,
 )
 from .wizard import run_wizard
 
@@ -29,7 +29,7 @@ STEPS = [
     ("virustotal", step5_virustotal, "step5_name"),
     ("magika", step6_magika, "step6_name"),
     ("semgrep", step7_semgrep, "step7_name"),
-    ("yara", step7_yara, "step7_yara_name"),
+    ("yara", step8_yara, "step8_yara_name"),
 ]
 
 EXIT_OK = 0
@@ -107,7 +107,7 @@ def _handle_dep_updates(updates: list, config: Config, t: Translator) -> None:
             break
 
         if choice == "1":
-            # Update with full scan — reuse the standard 8-step pipeline
+            # Update with full scan — reuse the standard 10-step pipeline
             # for our own deps. If it finds a threat, refuse to upgrade.
             print(t.t("dep_update_scanning", pkg=pkg, version=latest))
             rc = scan("pip", f"{pkg}=={latest}", config, t)
@@ -229,22 +229,100 @@ def _check_path_order() -> None:
 # ---------- update check ----------
 
 def _check_for_update(t: Translator, config: Optional[Config] = None) -> None:
+    """Check PyPI for a newer MagiSentry release and offer an interactive
+    [1]–[4] menu (Update+scan / Update / Skip / Remind later).
+
+    Non-blocking: EOFError / KeyboardInterrupt silently exits so an AI
+    agent with closed stdin is never stuck waiting for input. Network
+    failures, malformed PyPI responses, and missing config all degrade
+    to a quiet skip — never a hard scan failure."""
+    # 1. Fetch latest version from PyPI (5s timeout).
     try:
-        import json
+        import json as _json
         with urllib.request.urlopen(
             "https://pypi.org/pypi/magisentry/json", timeout=5,
         ) as resp:
-            latest = json.loads(resp.read().decode("utf-8")).get("info", {}).get("version")
-    except (urllib.error.URLError, urllib.error.HTTPError,
-            TimeoutError, OSError, ValueError):
-        return
-    if latest and latest != __version__:
-        print(t.t("update_available", new=latest, cur=__version__))
-        try:
-            from .notifier import notify_update
-            notify_update(t, __version__, latest, config)
-        except Exception:
-            pass
+            latest = _json.loads(
+                resp.read().decode("utf-8")
+            ).get("info", {}).get("version")
+    except Exception:
+        return   # network unavailable — silently skip
+
+    if not latest or latest == __version__:
+        return   # already up to date
+
+    # 2. Honour skip / remind state.
+    if config is not None:
+        if config.self_skip == latest:
+            return   # user permanently skipped this version
+        if config.self_remind:
+            try:
+                import datetime
+                remind_at = datetime.datetime.fromisoformat(config.self_remind)
+                if datetime.datetime.now() < remind_at:
+                    return   # still within remind window
+            except (ValueError, TypeError):
+                pass   # malformed timestamp — ignore and show menu
+
+    # 3. Toast notification (non-blocking, best-effort).
+    try:
+        from .notifier import notify_update
+        notify_update(t, __version__, latest, config)
+    except Exception:
+        pass
+
+    # 4. Interactive menu.
+    try:
+        print()
+        print(t.t("self_update_available", new=latest, cur=__version__))
+        print(t.t("self_update_menu"))
+        choice = _ask("").strip()
+    except (EOFError, KeyboardInterrupt):
+        return   # AI agent with closed stdin — silently skip
+
+    if choice == "1":
+        # Scan the new version through the full pipeline before installing.
+        print(t.t("self_update_scanning", version=latest))
+        rc = scan("pip", f"magisentry=={latest}", config, t)
+        if rc == EXIT_OK:
+            _pip_upgrade_self(latest, t)
+        else:
+            print(t.t("self_update_blocked"))
+
+    elif choice == "2":
+        _pip_upgrade_self(latest, t)
+
+    elif choice == "3":
+        if config is not None:
+            config.self_skip = latest
+            cfg_mod.save(config)
+        print(t.t("self_update_skipped", version=latest))
+
+    elif choice == "4":
+        if config is not None:
+            import datetime
+            remind_at = (
+                datetime.datetime.now()
+                + datetime.timedelta(hours=24)
+            ).isoformat(timespec="seconds")
+            config.self_remind = remind_at
+            cfg_mod.save(config)
+        print(t.t("self_update_remind_later"))
+    # Empty input / other: silently skip — no state persisted.
+
+
+def _pip_upgrade_self(version: str, t: Translator) -> None:
+    """Run `pip install --upgrade magisentry==<version>` in a subprocess.
+    Uses the same Python interpreter that is currently running."""
+    result = subprocess.run(
+        [sys.executable, "-m", "pip", "install",
+         f"magisentry=={version}", "--upgrade", "-q"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        print(t.t("self_update_done", version=version))
+    else:
+        print(t.t("self_update_no_pip", version=version))
 
 
 # ---------- I/O helpers ----------
@@ -426,7 +504,7 @@ LOCAL_FILE_STEPS = [
     ("virustotal", step5_virustotal, "step5_name"),
     ("magika", step6_magika, "step6_name"),
     ("semgrep", step7_semgrep, "step7_name"),
-    ("yara", step7_yara, "step7_yara_name"),
+    ("yara", step8_yara, "step8_yara_name"),
 ]
 
 
@@ -442,7 +520,7 @@ GIT_URL_STEPS = [
     ("virustotal", step5_virustotal, "step5_name"),
     ("magika",     step6_magika,     "step6_name"),
     ("semgrep",    step7_semgrep,    "step7_name"),
-    ("yara",       step7_yara,       "step7_yara_name"),
+    ("yara",       step8_yara,       "step8_yara_name"),
 ]
 
 _GIT_STEP_DISPLAY_N = {
@@ -714,7 +792,7 @@ def scan_git_url(url: str, config: Config, t: Translator) -> int:
 def _scan_single_step(ecosystem: str, target: str, config: Config,
                        t: Translator, module_path: str,
                        config_key: str) -> int:
-    """Used for ecosystems that don't fit the 7-step pipeline (vscode, docker).
+    """Used for ecosystems that don't fit the 8-step pipeline (vscode, docker).
     Runs exactly one step's `run()` and applies the same threat / failure
     semantics as a normal scan. If `config_key` is disabled in the user's
     config, the scan is skipped entirely (no-op pass-through)."""
@@ -1010,14 +1088,14 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
             print(t.t("cli_usage"))
             return EXIT_TECHNICAL
         return _scan_single_step(cmd, argv[2], config, t,
-                                 "magisentry.steps.step8_vscode",
+                                 "magisentry.steps.step9_vscode",
                                  "vscode_scan")
     if cmd == "docker":
         if len(argv) < 3 or argv[1] != "build":
             print(t.t("cli_usage"))
             return EXIT_TECHNICAL
         return _scan_single_step(cmd, argv[2], config, t,
-                                 "magisentry.steps.step9_dockerfile",
+                                 "magisentry.steps.step10_dockerfile",
                                  "dockerfile_scan")
     print(t.t("cli_unknown_command", cmd=cmd))
     print(t.t("cli_usage"))

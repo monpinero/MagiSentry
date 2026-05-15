@@ -5,7 +5,6 @@ installed; this is a pure metadata audit.
 """
 import json
 import re
-import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 

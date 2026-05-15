@@ -29,7 +29,7 @@ def _remove_unix_path_hook() -> None:
             continue
         try:
             lines = rc_path.read_text(encoding="utf-8").splitlines(keepends=True)
-            cleaned = [l for l in lines if "magisentry" not in l.lower()]
+            cleaned = [line for line in lines if "magisentry" not in line.lower()]
             if len(cleaned) != len(lines):
                 rc_path.write_text("".join(cleaned), encoding="utf-8")
         except OSError:

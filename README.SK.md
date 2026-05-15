@@ -7,6 +7,8 @@ Automaticky skenuje Python (pip), JavaScript (npm/yarn), rozšírenia VS Code a 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/monpinero/MagiSentry/blob/main/LICENSE)
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/monpinero/MagiSentry)
 [![i18n: EN | SK](https://img.shields.io/badge/i18n-EN%20%7C%20SK-orange.svg)](https://github.com/monpinero/MagiSentry)
+[![CI](https://github.com/monpinero/magisentry/actions/workflows/ci.yml/badge.svg)](https://github.com/monpinero/magisentry/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/magisentry.svg)](https://pypi.org/project/magisentry/)
 
 [🇬🇧 English version](README.md)
 
@@ -86,7 +88,7 @@ Každý balíček prechádza všetkými 8 krokmi v poradí. Technická chyba v n
 | 7 | Statická analýza kódu | Semgrep (lokálne, voliteľné) |
 | 8 | Zhoda vzorov | YARA (lokálne, voliteľné) |
 
-### Samostatné skenery — spúšťajú sa manuálne
+### Samostatné skenery — spúšťajú sa automaticky cez hooky
 
 | Skener | Nástroj |
 |---|---|
@@ -95,6 +97,8 @@ Každý balíček prechádza všetkými 8 krokmi v poradí. Technická chyba v n
 | Kontrola integrity | lokálne |
 
 Príkazy pozri v sekcii [Použitie](#použitie).
+
+Tieto skenery sa aktivujú automaticky keď tvoj AI agent spustí `code --install-extension` alebo `docker build` — nie je potrebný manuálny krok.
 
 ---
 
@@ -116,6 +120,12 @@ MagiSentry obalí príkaz správcu balíčkov tak, aby inštalačné požiadavky
 
 > Každý nástroj, ktorý spúšťa `pip install`, `npm install`, `magisentry vscode install` alebo `magisentry docker build` v termináli, bude automaticky zachytený po nastavení MagiSentry.
 
+### Dodatočná ochrana — blokovanie nebezpečných príkazov
+
+MagiSentry zachytáva príkazy shellu, ktoré sa pokúšajú stiahnuť a spustiť payloady mimo správcov balíčkov.
+
+> Detaily sú zámerne vynechané.
+
 ### Upozornenia viditeľné vo všetkých AI nástrojoch
 
 MagiSentry posiela štruktúrované upozornenia na **stderr**, čo znamená, že varovania pred hrozbami sa zobrazujú priamo v rozhraní každého podporovaného AI coding nástroja — nielen v termináli. Claude Code, Cursor, Windsurf, Aider, Continue.dev, Cline a ďalšie zobrazujú stderr výstup inline. Tvoj agent vidí varovanie v rovnakom momente ako ty.
@@ -125,6 +135,14 @@ MagiSentry posiela štruktúrované upozornenia na **stderr**, čo znamená, že
 ## Inštalácia
 
 **Požiadavky:** Python 3.8+, Git, Windows / Linux / macOS
+
+**Rýchly štart (PyPI):**
+```bash
+pip install magisentry
+magisentry-install-hooks
+```
+
+> Pre úplné nastavenie (integrácia PATH, hooky pre jednotlivé nástroje) použite platformové setup skripty nižšie.
 
 ```bash
 # 1. Klonovanie repozitára
@@ -165,6 +183,8 @@ pip install magisentry[all]       # všetko
 ```
 
 > Desktopové notifikácie fungujú automaticky na všetkých platformách — nie je potrebná žiadna extra inštalácia.
+
+> Ak si inštaloval cez git clone, spusti tieto príkazy z klonovaného adresára.
 
 ---
 
@@ -210,6 +230,19 @@ magisentry audit
 ```
 
 Skenuje všetky závislosti nájdené v `pyproject.toml`, `requirements.txt` a `package.json` v aktuálnom adresári v jednom prechode. Užitočné pred commitom alebo nasadením.
+
+### Aktualizácie
+
+MagiSentry kontroluje nové verzie pri každom spustení. Keď je dostupná aktualizácia, ponúkne interaktívne menu:
+
+```
+[1] Aktualizovať s úplným skenovaním (odporúčané)
+[2] Aktualizovať bez skenovania
+[3] Preskočiť túto verziu
+[4] Pripomenúť neskôr
+```
+
+Možnosť [1] skenuje novú verziu cez celý pipeline pred inštaláciou — MagiSentry skontroluje sám seba pred tým, ako sa aktualizuje.
 
 ### Správa whitelist
 ```bash

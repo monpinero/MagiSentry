@@ -7,6 +7,8 @@ Automatically scans Python (pip), JavaScript (npm/yarn), VS Code extensions and 
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/monpinero/MagiSentry/blob/main/LICENSE)
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/monpinero/MagiSentry)
 [![i18n: EN | SK](https://img.shields.io/badge/i18n-EN%20%7C%20SK-orange.svg)](https://github.com/monpinero/MagiSentry)
+[![CI](https://github.com/monpinero/magisentry/actions/workflows/ci.yml/badge.svg)](https://github.com/monpinero/magisentry/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/magisentry.svg)](https://pypi.org/project/magisentry/)
 
 [🇸🇰 Slovenská verzia](README.SK.md)
 
@@ -86,7 +88,7 @@ Every package passes through all 8 steps in sequence. A technical failure in any
 | 7 | Static code analysis | Semgrep (local, optional) |
 | 8 | Pattern matching | YARA (local, optional) |
 
-### Standalone scanners — triggered manually
+### Standalone scanners — triggered automatically via hooks
 
 | Scanner | Tool |
 |---|---|
@@ -95,6 +97,8 @@ Every package passes through all 8 steps in sequence. A technical failure in any
 | Integrity check | local |
 
 See [Usage](#usage) for commands.
+
+These scanners activate automatically when your AI agent runs `code --install-extension` or `docker build` — no manual step needed.
 
 ---
 
@@ -116,6 +120,12 @@ MagiSentry wraps the package manager command so that your AI agent's install req
 
 > Any tool that runs `pip install`, `npm install`, `magisentry vscode install`, or `magisentry docker build` in a terminal will be intercepted automatically once MagiSentry is set up.
 
+### Additional protection — dangerous command blocking
+
+MagiSentry intercepts shell commands that attempt to download and execute payloads outside of package managers.
+
+> Details intentionally omitted.
+
 ### Warnings visible in all AI tools
 
 MagiSentry outputs structured warnings to **stderr**, which means threat alerts appear directly in the interface of every supported AI coding tool — not just in the terminal. Claude Code, Cursor, Windsurf, Aider, Continue.dev, Cline and others all surface stderr output inline. Your agent sees the warning the same moment you do.
@@ -125,6 +135,14 @@ MagiSentry outputs structured warnings to **stderr**, which means threat alerts 
 ## Installation
 
 **Requirements:** Python 3.8+, Git, Windows / Linux / macOS
+
+**Quickstart (PyPI):**
+```bash
+pip install magisentry
+magisentry-install-hooks
+```
+
+> For the full setup (PATH integration, per-tool hooks), use the platform setup scripts below.
 
 ```bash
 # 1. Clone the repository
@@ -165,6 +183,8 @@ pip install magisentry[all]       # everything
 ```
 
 > Desktop notifications work automatically on all platforms — no extra install needed.
+
+> If you installed via git clone, run these from the cloned directory.
 
 ---
 
@@ -210,6 +230,19 @@ magisentry audit
 ```
 
 Scans all dependencies found in `pyproject.toml`, `requirements.txt`, and `package.json` in the current directory in a single pass. Useful before committing or deploying.
+
+### Updates
+
+MagiSentry checks for new versions on every run. When an update is available, it offers an interactive menu:
+
+```
+[1] Update with full scan (recommended)
+[2] Update without scan
+[3] Skip this version
+[4] Remind me later
+```
+
+Option [1] scans the new version through the full pipeline before installing it — MagiSentry checks itself before it updates itself.
 
 ### Whitelist management
 ```bash
