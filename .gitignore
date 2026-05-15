@@ -37,3 +37,15 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Ruff cache
+.ruff_cache/
+
+# Internal development files
+tasks/
+test_req.txt
+test_*.txt
+
+# AI tool configs (local only)
+.aider.conf.yml
+**/.aider.conf.yml

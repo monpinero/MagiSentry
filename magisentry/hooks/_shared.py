@@ -366,6 +366,101 @@ def parse_special_command(command: str) -> Optional[Tuple[str, List[str]]]:
     return None
 
 
+SHELL_INTERPRETERS = {
+    "bash", "sh", "zsh", "fish", "ksh", "dash",
+    "python", "python3", "python2",
+    "perl", "ruby", "node", "nodejs",
+    "pwsh", "powershell",
+}
+
+_CURL_WGET_RE = re.compile(r"\b(?:curl|wget)\b", re.IGNORECASE)
+_CHMOD_X_RE = re.compile(r"\bchmod\s+\+x\b", re.IGNORECASE)
+# An "execute" segment is one that starts (or follows && / ; / |) with
+# ./X, bash X, sh X, or an absolute path /X. The leading segment-boundary
+# anchor prevents `chmod +x /tmp/t` from itself counting as execution.
+_EXEC_RE = re.compile(
+    r"(?:&&|\|\|?|;|^)\s*(?:\./\S+|bash\s+\S+|sh\s+\S+|/\S+)",
+    re.IGNORECASE,
+)
+_PS_ENC_RE = re.compile(
+    r"\b(?:powershell(?:\.exe)?|pwsh(?:\.exe)?)\b"
+    r"(?:\s+-\S+)*?\s+-(?:e|enc|encodedcommand)\s+(\S+)",
+    re.IGNORECASE,
+)
+_PS_EXEC_PATTERNS = (
+    re.compile(r"\biex\s*\(", re.IGNORECASE),
+    re.compile(r"\binvoke-expression\s*\(", re.IGNORECASE),
+    re.compile(r"\binvoke-webrequest\b", re.IGNORECASE),
+    re.compile(r"\(\s*new-object\s+net\.webclient\s*\)", re.IGNORECASE),
+    re.compile(r"\bstart-bitstransfer\b", re.IGNORECASE),
+)
+_URL_RE = re.compile(r"https?://", re.IGNORECASE)
+_PS_PAYLOAD_INDICATORS = (
+    "http://", "https://",
+    "iex", "invoke-expression",
+    "downloadstring", "downloadfile",
+    "webclient", "invoke-webrequest",
+    "start-bitstransfer", "net.webclient",
+)
+
+
+def parse_dangerous_exec(command: str) -> Optional[Tuple[str, str]]:
+    """Detect download-and-execute patterns in a raw shell command.
+
+    Returns (result_type, i18n_key) where result_type is:
+        "block"   -> hard block, exit 2
+        "confirm" -> needs interactive y/N confirmation
+    Returns None when the command is benign.
+
+    Group ordering matters: PowerShell -enc is decoded first because it
+    can hide every other pattern; iex/Invoke + URL comes next; finally
+    curl/wget shell pipes and the download+chmod+exec chain.
+    """
+    # Group 3: powershell -enc <base64> — decode and inspect payload.
+    m = _PS_ENC_RE.search(command)
+    if m:
+        b64 = m.group(1).strip("\"'")
+        try:
+            import base64 as _b64
+            import binascii
+            decoded = _b64.b64decode(b64, validate=True)
+        except (binascii.Error, ValueError):
+            return ("block", "dangerous_exec_ps_encoded_invalid")
+        text = decoded.decode("utf-16-le", errors="ignore").lower()
+        for ind in _PS_PAYLOAD_INDICATORS:
+            if ind in text:
+                return ("block", "dangerous_exec_ps_encoded_malicious")
+        return None
+
+    # Group 4: iex / Invoke-* + URL.
+    has_url = bool(_URL_RE.search(command))
+    if has_url:
+        for pat in _PS_EXEC_PATTERNS:
+            if pat.search(command):
+                return ("block", "dangerous_exec_ps_iex")
+
+    has_curl_wget = bool(_CURL_WGET_RE.search(command))
+
+    # Group 1: curl/wget piped to a shell interpreter.
+    if has_curl_wget and "|" in command:
+        last_part = command.rsplit("|", 1)[1].strip()
+        tokens = last_part.split() if last_part else []
+        if tokens:
+            name = tokens[0].rsplit("/", 1)[-1].rsplit("\\", 1)[-1].lower()
+            if name.endswith(".exe"):
+                name = name[:-4]
+            if name in SHELL_INTERPRETERS:
+                return ("block", "dangerous_exec_pipe")
+
+    # Group 2: download + chmod +x + execute — needs all three together.
+    if (has_curl_wget
+            and _CHMOD_X_RE.search(command)
+            and _EXEC_RE.search(command)):
+        return ("confirm", "dangerous_exec_chmod")
+
+    return None
+
+
 def passthrough() -> int:
     """No install command found — allow the tool call to proceed."""
     return 0

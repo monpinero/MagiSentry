@@ -1,5 +1,4 @@
 """Setup wizard. Language is the FIRST question, before anything else."""
-import json
 import os
 import subprocess
 import sys
@@ -8,7 +7,7 @@ import urllib.error
 from pathlib import Path
 
 from ._platform import IS_WINDOWS, IS_MAC, IS_LINUX, is_wsl
-from .config import save, CONFIG_PATH
+from .config import save
 from .i18n import Translator
 from .models import Config
 
@@ -66,9 +65,9 @@ _STEP_NAMES = [
     ("virustotal", "step5_name", "step5_desc", True),
     ("magika", "step6_name", "step6_desc", False),
     ("semgrep", "step7_name", "step7_desc", False),
-    ("yara", "step7_yara_name", "step7_yara_desc", False),
-    ("vscode_scan", "step8_name", "step8_desc", True),
-    ("dockerfile_scan", "step9_name", "step9_desc", True),
+    ("yara", "step8_yara_name", "step8_yara_desc", False),
+    ("vscode_scan", "step9_name", "step9_desc", True),
+    ("dockerfile_scan", "step10_name", "step10_desc", True),
 ]
 
 

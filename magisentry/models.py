@@ -1,6 +1,6 @@
 """Core data structures: StepResult and Config."""
 from dataclasses import dataclass, field, asdict
-from typing import ClassVar, List, Dict, Optional, Literal
+from typing import ClassVar, List, Dict, Literal
 
 Status = Literal["OK", "THREAT", "FAILURE"]
 
@@ -22,15 +22,15 @@ class Config:
     language: str = "en"
     notifications: bool = True       # cross-platform desktop popup
     steps: Dict[str, bool] = field(default_factory=lambda: {
-        # 7-step pre-install pipeline (run in order)
+        # 8-step pre-install pipeline (run in order)
         "registry_check": True,
         "osv_check": True,
         "pip_audit": True,
         "isolated_download": True,
         "virustotal": True,
         "magika": True,
-        "semgrep": False,           # step 7 sub-A — needs `semgrep` binary
-        "yara": False,              # step 7 sub-B — needs `yara-python`
+        "semgrep": False,           # step 7 — needs `semgrep` binary
+        "yara": False,              # step 8 — needs `yara-python`
         # Standalone scans (triggered by their own ecosystem commands)
         "vscode_scan": True,
         "dockerfile_scan": True,
@@ -42,6 +42,12 @@ class Config:
     # silence the menu for that pkg until `now >= dep_remind[pkg]`.
     dep_skip: Dict[str, str] = field(default_factory=dict)
     dep_remind: Dict[str, str] = field(default_factory=dict)
+
+    # Self-update prompt state — parallel to dep_skip / dep_remind.
+    # self_skip: version string the user chose to skip permanently.
+    # self_remind: ISO-8601 timestamp; silence menu until now >= self_remind.
+    self_skip: str = ""
+    self_remind: str = ""
 
     # Legacy step keys → current keys. Loaded configs from before the
     # rename are migrated transparently in `from_dict`. Class-level so it
@@ -78,4 +84,6 @@ class Config:
                 cfg.steps[k] = bool(steps[k])
         cfg.dep_skip = dict(d.get("dep_skip") or {})
         cfg.dep_remind = dict(d.get("dep_remind") or {})
+        cfg.self_skip = str(d.get("self_skip") or "")
+        cfg.self_remind = str(d.get("self_remind") or "")
         return cfg

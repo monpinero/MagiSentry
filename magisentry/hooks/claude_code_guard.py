@@ -16,7 +16,7 @@ import json
 import sys
 
 from ._shared import (
-    parse_install_command, parse_special_command,
+    parse_install_command, parse_special_command, parse_dangerous_exec,
     run_for_packages, passthrough, block_with_message,
 )
 
@@ -32,6 +32,46 @@ def main() -> int:
     command = (payload.get("tool_input") or {}).get("command") or ""
     parsed = parse_install_command(command) or parse_special_command(command)
     if parsed is None:
+        danger = parse_dangerous_exec(command)
+        if danger is not None:
+            result_type, i18n_key = danger
+            try:
+                from ..config import load as load_config
+                from ..i18n import Translator
+                cfg = load_config()
+                t = Translator(cfg.language if cfg else "en")
+            except Exception:
+                from ..i18n import Translator
+                t = Translator("en")
+
+            if result_type == "block":
+                msg = (
+                    t.t("dangerous_exec_header") + "\n"
+                    + t.t(i18n_key) + "\n"
+                    + t.t("dangerous_exec_command", cmd=command[:120])
+                )
+                return block_with_message(msg)
+
+            if result_type == "confirm":
+                sys.stderr.write(
+                    t.t("dangerous_exec_header") + "\n"
+                    + t.t(i18n_key) + "\n"
+                    + t.t("dangerous_exec_command", cmd=command[:120]) + "\n"
+                    + t.t("dangerous_exec_confirm") + " "
+                )
+                sys.stderr.flush()
+                try:
+                    answer = sys.stdin.readline().strip().lower()
+                except (EOFError, OSError):
+                    return block_with_message(
+                        t.t("dangerous_exec_agent_blocked")
+                    )
+                if answer == "y":
+                    return passthrough()
+                return block_with_message(
+                    t.t("dangerous_exec_user_blocked")
+                )
+
         return passthrough()
 
     ecosystem, packages = parsed

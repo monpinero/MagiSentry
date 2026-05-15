@@ -16,12 +16,12 @@ LONG_DESCRIPTION = README.read_text(encoding="utf-8") if README.exists() else (
     "MagiSentry — universal supply-chain security scanner that intercepts "
     "package installations across all major AI coding agents and IDEs. "
     "Scans Python (pip) and JavaScript (npm/yarn) packages through a "
-    "7-layer pipeline before installation."
+    "10-step scanner before installation."
 )
 
 setup(
     name="magisentry",
-    version="1.0.1",
+    version="1.0.2",
     description="Supply-chain security scanner for AI coding agents (pip + npm)",
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
@@ -42,7 +42,7 @@ setup(
     include_package_data=True,
 
     install_requires=[
-        # Pinned to exact versions for v1.0.1 — supply-chain hygiene.
+        # Pinned to exact versions for v1.0.2 — supply-chain hygiene.
         # Bumping is a deliberate release-time decision, never an
         # accidental side-effect of `pip install -U`.
         "magika==1.0.2",

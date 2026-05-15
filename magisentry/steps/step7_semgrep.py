@@ -1,9 +1,9 @@
-"""Step 7 sub-step A — Semgrep static analysis.
+"""Step 7 — Semgrep static analysis.
 
 Optional: if the `semgrep` binary is not on PATH, returns FAILURE with
 `can_retry=False` so fail-secure offers Skip rather than infinite Retry.
-The Yara sub-step is now its own module (`step7_yara.py`) with its own
-config toggle — that's why this file no longer mentions Yara.
+Yara is step 8, its own module (`step8_yara.py`) with its own config
+toggle — that's why this file no longer mentions Yara.
 """
 import json
 import shutil
