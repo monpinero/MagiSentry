@@ -19,6 +19,42 @@ from pathlib import Path
 from ._platform import IS_WINDOWS, IS_LINUX, IS_MAC
 
 
+def _uv_available() -> bool:
+    """Return True iff `uv` is on PATH and responds to --version.
+
+    `shutil.which` alone would be enough on POSIX, but a broken /
+    half-removed uv on Windows can leave a phantom entry in PATH that
+    matches `which` yet fails to execute. The `--version` round-trip
+    is the only reliable probe."""
+    if shutil.which("uv") is None:
+        return False
+    try:
+        return subprocess.run(
+            ["uv", "--version"], capture_output=True, timeout=5,
+        ).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _kill_running_magisentry() -> None:
+    """Best-effort: stop any running `magisentry.exe` on Windows.
+
+    `uv tool uninstall` and `pip uninstall` both fail with
+    "[WinError 32] file in use" if a `magisentry pip install …` is
+    still running in another terminal — taskkill removes that
+    contention. Silent no-op when no process is running or on
+    non-Windows."""
+    if not IS_WINDOWS:
+        return
+    try:
+        subprocess.run(
+            ["taskkill", "/f", "/im", "magisentry.exe"],
+            capture_output=True, timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+
+
 def _remove_unix_path_hook() -> None:
     """Strip every line mentioning `magisentry` from the user's shell rc
     files. Best-effort: any I/O failure is swallowed so a partial
@@ -87,6 +123,18 @@ def uninstall(t) -> None:
         print(t("uninstall_cancelled"))
         return
 
+    # 0. Clean up AI-tool hook entries BEFORE we delete anything else.
+    #    install_hooks knows how to surgically remove just MagiSentry's
+    #    contributions to ~/.claude/settings.json, ~/.continue/config.json,
+    #    .cursor/rules, .windsurf/rules, .vscode/tasks.json. Best-effort:
+    #    never block uninstall if hooks cleanup fails (the user can run
+    #    `magisentry-install-hooks --uninstall --all` manually).
+    try:
+        from .install_hooks import main as _hooks_main
+        _hooks_main(["--uninstall", "--all"])
+    except Exception:
+        pass
+
     # 1. Remove ~/.magisentry/ (config, scan counter, shim dir).
     config_dir = Path.home() / ".magisentry"
     if config_dir.exists():
@@ -99,7 +147,21 @@ def uninstall(t) -> None:
     elif IS_LINUX or IS_MAC:
         _remove_unix_path_hook()
 
-    # 3. pip uninstall — non-fatal if the package is already gone.
+    # 3. Stop any running MagiSentry process so the uninstall step
+    #    isn't blocked by a locked binary (Windows only).
+    _kill_running_magisentry()
+
+    # 4. Uninstall via uv tool if available, falling back to pip for
+    #    legacy `pip install --user` deployments. Both are run with
+    #    `check=False` — "not installed" is a perfectly fine outcome.
+    if _uv_available():
+        subprocess.run(
+            ["uv", "tool", "uninstall", "magisentry"],
+            check=False, capture_output=True,
+        )
+    # pip uninstall covers the pre-uv-migration case where MagiSentry
+    # was installed via `pip install --user`. Harmless when the uv
+    # branch already cleared everything.
     subprocess.run(
         [sys.executable, "-m", "pip", "uninstall", "magisentry", "-y"],
         check=False,

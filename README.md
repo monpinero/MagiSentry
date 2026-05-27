@@ -29,7 +29,9 @@ I'm not a developer. I don't know Python, JavaScript, or any programming languag
 
 I started digging. What I found was unsettling — supply chain attacks on open source packages are real, frequent, and growing fast. And AI agents are the perfect target: they install packages automatically, at speed, without asking questions.
 
-So I built MagiSentry — with AI assistance, from scratch, with no prior coding experience. The code works. It's tested. It runs locally. And now it's here for anyone who wants it.
+The idea crystallised when I came across Magika — Google's open-source file-type detection engine. I realised it could be the foundation of something more: a scanner that intercepts packages before they reach an AI agent's environment. That insight became MagiSentry. The name reflects its origins — Magika at the core, Sentry as its purpose: a watchful guardian that checks what your AI agent is about to install.
+
+Built with AI assistance, from scratch, with no prior coding experience. The code works. It's tested. It runs locally. And now it's here for anyone who wants it.
 
 ---
 
@@ -134,15 +136,21 @@ MagiSentry outputs structured warnings to **stderr**, which means threat alerts 
 
 ## Installation
 
-**Requirements:** Python 3.8+, Git, Windows / Linux / macOS
+**Requirements:** Python 3.8+, [uv](https://astral.sh/uv/), Git, Windows / Linux / macOS
 
 **Quickstart (PyPI):**
 ```bash
-pip install magisentry
+pip install uv          # if uv is not installed yet
+uv tool install magisentry
 magisentry-install-hooks
 ```
 
-> For the full setup (PATH integration, per-tool hooks), use the platform setup scripts below.
+`uv tool install` puts MagiSentry into its own isolated environment. Other `pip install` / `uv add` invocations on the same machine can never collide with MagiSentry's dependency pins (e.g. `magika==1.0.3`).
+
+> **First-install bootstrap note**
+> The very first install of `uv` itself and of MagiSentry is *not* scanned — a security tool cannot scan its own bootstrap. This is expected. Every subsequent install on the machine is protected.
+
+> For the full setup (PATH integration, per-tool hooks, integrity manifest), use the platform setup scripts below.
 
 ```bash
 # 1. Clone the repository
@@ -168,23 +176,40 @@ chmod +x setup_mac.sh && ./setup_mac.sh
 echo 'export VT_API_KEY="your_api_key_here"' >> ~/.zshrc && source ~/.zshrc
 ```
 
-The setup script installs the core dependencies (`magika`, `pip-audit`) and registers the `magisentry` command in your PATH.
+Each setup script bootstraps `uv` if missing, migrates any prior `pip install --user` deployment to an isolated uv tool environment, installs MagiSentry from the local clone in editable mode (`uv tool install --editable .`), and registers the `magisentry` command in your PATH.
 
 > **No VirusTotal key?** The scanner still works — Step 5 is skipped with a warning. All other steps remain fully functional.
+
+> **VirusTotal free API** is intended for personal, non-commercial use. MagiSentry qualifies — it is a free, open-source tool for individual developers. Limit: 500 lookups/day, 4 requests/min.
+> [Free registration → virustotal.com](https://www.virustotal.com)
 
 ### Optional extras
 
 Install only what you need:
 
 ```bash
-pip install magisentry[semgrep]   # Step 7 — static code analysis (Python 3.10+)
-pip install magisentry[yara]      # Step 8 — pattern matching
-pip install magisentry[all]       # everything
+uv tool install "magisentry[semgrep]"   # Step 7 — static code analysis (Python 3.10+)
+uv tool install "magisentry[yara]"      # Step 8 — pattern matching
+uv tool install "magisentry[all]"       # everything
 ```
 
 > Desktop notifications work automatically on all platforms — no extra install needed.
 
 > If you installed via git clone, run these from the cloned directory.
+
+> **Note:** MagiSentry pins semgrep to a tested version (`==1.162.0`).
+> semgrep 1.163.0 contains a Windows RPC bug — if the wizard offers
+> a semgrep update, decline it until the next MagiSentry release.
+
+### Changing settings after installation
+
+To change settings (enable/disable steps, update API key, change language) run the wizard directly:
+
+```bash
+magisentry config --wizard
+```
+
+Reinstall via the setup script is intentionally not available. Re-running the setup script on an already-installed system offers only **[1] Uninstall** and **[2] Cancel** — this protects the isolated environment from unintended dependency changes. For manual updates: `uv tool upgrade magisentry`.
 
 ---
 
@@ -198,6 +223,29 @@ magisentry pip install -r requirements.txt
 ```
 
 > `pip3` and `python -m pip install` are also intercepted automatically.
+
+### Packages — uv
+```bash
+magisentry uv add requests
+magisentry uv pip install "numpy==1.26.4"
+magisentry uv tool install ruff
+```
+
+> `uv add`, `uv pip install`, `uv tool install`, and `uvx install` are intercepted automatically. Non-install sub-commands (`uv sync`, `uv run`, `uv build`, `uv lock`, `uv venv`, ...) pass through without scanning.
+
+### Running manually in PowerShell
+
+If you are not using an AI coding agent, you can run MagiSentry directly in PowerShell before installing any package:
+
+```bash
+magisentry pip install requests
+magisentry pip install "numpy==1.26.4"
+magisentry pip install -r requirements.txt
+```
+
+This is the same command the hook sends automatically when Claude Code or another agent runs pip install — you are just calling it yourself. The full 10-step pipeline runs identically either way.
+
+> **Tip:** Open a new PowerShell window after installation to make sure the magisentry command is available on PATH.
 
 ### Packages — npm / yarn
 ```bash
@@ -269,30 +317,30 @@ magisentry uninstall
 **Option 2 — via setup script (all platforms):**
 ```bash
 # Windows
-setup_windows.bat        # choose [2] Uninstall
+setup_windows.bat        # choose [1] Uninstall
 
 # Linux
-./setup_linux.sh         # choose [2] Uninstall
+./setup_linux.sh         # choose [1] Uninstall
 
 # macOS
-./setup_mac.sh           # choose [2] Uninstall
+./setup_mac.sh           # choose [1] Uninstall
 ```
 
-Both options remove `~/.magisentry/` config directory, clean up PATH, and run `pip uninstall magisentry`.
+Both options remove `~/.magisentry/` config directory, clean up hooks, PATH entries, and run `uv tool uninstall magisentry`.
 
 ### Optional dependencies
 
 MagiSentry's optional scan components are not removed automatically. To uninstall them manually:
 
 ```bash
-pip uninstall semgrep        # Step 7 — static code analysis
-pip uninstall yara-python    # Step 8 — pattern matching
+uv tool run --from magisentry pip uninstall semgrep     # Step 7 — static code analysis
+uv tool run --from magisentry pip uninstall yara-python # Step 8 — pattern matching
 ```
 
-Core dependencies (magika, pip-audit) are shared components and are intentionally left in place. Remove them manually only if you are sure nothing else on your system depends on them:
+Core dependencies (magika, pip-audit) are part of the isolated uv environment and are intentionally left in place. Remove them manually only if needed:
 
 ```bash
-pip uninstall magika pip-audit winotify
+uv tool run --from magisentry pip uninstall magika pip-audit winotify
 ```
 
 ---
@@ -308,6 +356,32 @@ You can also whitelist a package to suppress future warnings:
 ```bash
 magisentry whitelist add pip:package-name
 ```
+
+---
+
+## Known issues
+
+### Semgrep — first scan after installation may fail
+
+When semgrep runs for the first time, it downloads rulesets (`p/supply-chain`,
+`p/secrets`) from the internet into a local cache. If the connection is slow
+or the server does not respond in time, the scan fails with:
+
+```
+[7/8] Semgrep — static code analysis
+  -> FAILURE: Semgrep crashed while processing input.
+```
+
+**Workaround:** Run the same scan again. The second run uses the cached
+rulesets and completes normally.
+
+### Semgrep 1.163.0 — broken on Windows
+
+semgrep 1.163.0 contains a Windows RPC bug that causes step 7 to crash on
+every scan. MagiSentry pins semgrep to `==1.162.0` which works correctly.
+
+If the wizard offers a semgrep update, decline it (choose **[3] Skip this
+version**) until the next MagiSentry release confirms compatibility.
 
 ---
 
@@ -390,6 +464,7 @@ MagiSentry is designed to minimise cloud data exposure:
 | YARA | Always free | No | **Yes** |
 | VS Code Marketplace API | Always free | No | No |
 | Dockerfile analysis | Always free | No | **Yes** |
+| uv (Astral) | Always free | No | **Yes** |
 
 ---
 

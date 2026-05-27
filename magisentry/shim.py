@@ -20,13 +20,18 @@ import subprocess
 import sys
 from typing import List, Optional
 
-from .hooks._shared import parse_install_command, run_for_packages
+from .hooks._shared import (
+    parse_install_command, run_for_packages,
+    normalise_uv_args, normalise_uvx_args,
+)
 
 REAL_BIN_NAMES = {
     "pip": ["pip", "pip3"],
     "npm": ["npm"],
     "yarn": ["yarn"],
     "pnpm": ["pnpm"],
+    "uv": ["uv"],
+    "uvx": ["uvx"],
 }
 
 
@@ -59,9 +64,25 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     ecosystem = argv[0]
     rest = argv[1:]
-    if ecosystem not in ("pip", "npm", "yarn", "pnpm"):
+    if ecosystem not in ("pip", "npm", "yarn", "pnpm", "uv", "uvx"):
         sys.stderr.write(f"magisentry shim: unknown ecosystem `{ecosystem}`\n")
         return 1
+
+    # uv/uvx: only a few sub-commands install packages. Everything else
+    # (uv sync, uv run, uv build, uv venv, ...) passes through untouched.
+    if ecosystem in ("uv", "uvx"):
+        normaliser = normalise_uv_args if ecosystem == "uv" else normalise_uvx_args
+        packages = normaliser(rest)
+        if packages is None:
+            return _exec_real(ecosystem, rest)
+        rc = run_for_packages("pip", packages)
+        if rc == 2:
+            sys.stderr.write("MagiSentry blocked this install.\n")
+            return 2
+        if rc == 1:
+            sys.stderr.write("MagiSentry scanner failed in fail-secure mode — install blocked.\n")
+            return 2
+        return _exec_real(ecosystem, rest)
 
     # Reconstruct command for parser.
     full = ecosystem + " " + " ".join(rest)

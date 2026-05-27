@@ -11,11 +11,52 @@ same OSV endpoint contract that `step2_osv.py` already proved out.
 import json
 import shutil
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 from typing import List, Optional, Tuple
 
 from .i18n import Translator
+
+
+# Path fragments that mark `sys.executable` as living inside a uv-managed
+# tool environment. Cross-platform: posix uses `.local/share/uv/tools`,
+# Windows uses `AppData\Local\uv\tools` (case-insensitive on NTFS).
+_UV_TOOL_MARKERS = (
+    "/uv/tools/magisentry/",
+    "\\uv\\tools\\magisentry\\",
+    # XDG_DATA_HOME may relocate the tools dir, but the `uv/tools` segment
+    # is preserved by uv regardless of where the data home lives.
+    "/uv/tools/",
+    "\\uv\\tools\\",
+)
+
+
+def _is_uv_isolated() -> bool:
+    """Return True when this process is running inside a uv tool venv.
+
+    Heuristic only — checks `sys.executable` for the `uv/tools` path
+    fragment. Returns False on any ambiguity. Used purely for an
+    informational warning; never blocks a scan."""
+    try:
+        exe = (sys.executable or "").lower()
+    except Exception:
+        return False
+    return any(marker in exe for marker in _UV_TOOL_MARKERS)
+
+
+def check_uv_isolation(t: Translator) -> None:
+    """Print an informational warning if MagiSentry is not running inside
+    a uv tool isolated environment. Best-effort, non-blocking — any
+    exception is swallowed so a scan is never disrupted by this check."""
+    try:
+        if _is_uv_isolated():
+            return
+        print()
+        print(t.t("self_audit_uv_isolation_warning"))
+        print("  " + t.t("self_audit_uv_isolation_recommend"))
+    except Exception:
+        return
 
 # Deps we audit. `pkg_name` is the importable / PyPI package name.
 DEPS = ("magika", "pip-audit", "semgrep")

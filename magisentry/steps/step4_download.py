@@ -27,7 +27,7 @@ def _extract(archive: Path, dest: Path) -> None:
 
 
 def _pip_download(package: str) -> Path:
-    tmp = Path(tempfile.mkdtemp(prefix="magisentry_pip_"))
+    tmp = Path(tempfile.mkdtemp(prefix="magisentry_pip_")).resolve()
     proc = subprocess.run(
         [sys.executable, "-m", "pip", "download", package,
          "--no-deps", "--dest", str(tmp), "--disable-pip-version-check"],
@@ -56,7 +56,7 @@ def _npm_download(package: str) -> Path:
     tarball_url = (meta.get("dist") or {}).get("tarball")
     if not tarball_url:
         raise RuntimeError("no tarball url")
-    tmp = Path(tempfile.mkdtemp(prefix="magisentry_npm_"))
+    tmp = Path(tempfile.mkdtemp(prefix="magisentry_npm_")).resolve()
     archive = tmp / Path(tarball_url).name
     archive.write_bytes(http_get_bytes(tarball_url, timeout=120))
     return archive

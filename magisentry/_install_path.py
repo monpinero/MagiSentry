@@ -36,7 +36,10 @@ def _user_scripts_dir() -> str:
 
 
 def _add_to_registry_path(new_dir: str) -> bool:
-    """Idempotently append `new_dir` to user-scope PATH and dedupe.
+    """Idempotently prepend `new_dir` to user-scope PATH and dedupe.
+
+    Always moves the entry to position 0 so MagiSentry shims take
+    priority over any system pip / npm / python.
 
     Returns True if the registry was actually written (entry added or
     duplicates removed), False if no change was needed.
@@ -57,11 +60,13 @@ def _add_to_registry_path(new_dir: str) -> bool:
             if e.lower() not in (x.lower() for x in seen):
                 seen.append(e)
 
-        # Append new_dir if not already present.
-        added = False
-        if new_dir.lower() not in (x.lower() for x in seen):
-            seen.append(new_dir)
-            added = True
+        # Always prepend — MagiSentry shim must come before any
+        # system pip/npm/python on PATH. Remove any existing
+        # occurrence first (it may already be present but in the
+        # wrong position), then insert at index 0.
+        seen = [e for e in seen if e.lower() != new_dir.lower()]
+        seen.insert(0, new_dir)
+        added = True
 
         rebuilt = ";".join(seen)
         if rebuilt == current:

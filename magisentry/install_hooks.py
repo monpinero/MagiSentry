@@ -93,7 +93,9 @@ def install_shell_shim() -> None:
     # pip / pip3 / python(-m pip) cover every common Python install path
     # AI agents reach for. python.bat / python3.sh fall through to the
     # real interpreter for non-pip calls so unrelated scripts still run.
-    common_shims = ("pip", "pip3", "npm", "yarn", "pnpm")
+    # uv / uvx are intercepted for their install-shaped sub-commands
+    # (`uv add`, `uv pip install`, `uv tool install`, `uvx install`).
+    common_shims = ("pip", "pip3", "npm", "yarn", "pnpm", "uv", "uvx")
     platform_shims = ("python",) if os.name == "nt" else ("python3",)
     for tool in common_shims + platform_shims:
         src = src_dir / f"{tool}{suffix}"
@@ -211,6 +213,163 @@ TOOLS: Dict[str, Callable[[], None]] = {
 }
 
 
+# -------------------- per-tool uninstallers --------------------
+#
+# Each function is the inverse of the matching `install_*` above. The
+# uninstaller's job is "remove ONLY MagiSentry's contribution and leave
+# everything else the user added intact" — never wipe a whole settings
+# file, never delete a directory we don't own. Best-effort throughout:
+# a hook that's already gone is a successful no-op, not an error.
+
+def uninstall_claude_code() -> None:
+    """Remove MagiSentry's PreToolUse hook from Claude Code settings."""
+    target = _project_or_global_dir(".claude", HOME / ".claude") / "settings.json"
+    if not target.exists():
+        print(T.t("ihooks_uninstall_not_found", path=str(target)))
+        return
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+        hooks = data.get("hooks", {})
+        for event in list(hooks.keys()):
+            hooks[event] = [
+                h for h in hooks[event]
+                if "magisentry" not in json.dumps(h).lower()
+            ]
+            if not hooks[event]:
+                del hooks[event]
+        if not hooks:
+            data.pop("hooks", None)
+        else:
+            data["hooks"] = hooks
+        target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        print(T.t("ihooks_uninstalled", path=str(target)))
+    except (OSError, json.JSONDecodeError) as e:
+        print(T.t("ihooks_error", error=str(e)))
+
+
+def uninstall_cursor() -> None:
+    """Remove MagiSentry rules file from Cursor config."""
+    target = _project_or_global_dir(".cursor", HOME / ".cursor") / "rules"
+    if target.exists():
+        target.unlink()
+        print(T.t("ihooks_uninstalled", path=str(target)))
+    else:
+        print(T.t("ihooks_uninstall_not_found", path=str(target)))
+
+
+def uninstall_windsurf() -> None:
+    """Remove MagiSentry rules file from Windsurf config."""
+    target = _project_or_global_dir(".windsurf", HOME / ".windsurf") / "rules"
+    if target.exists():
+        target.unlink()
+        print(T.t("ihooks_uninstalled", path=str(target)))
+    else:
+        print(T.t("ihooks_uninstall_not_found", path=str(target)))
+
+
+def uninstall_continue() -> None:
+    """Remove MagiSentry entries from Continue config."""
+    target = HOME / ".continue" / "config.json"
+    if not target.exists():
+        print(T.t("ihooks_uninstall_not_found", path=str(target)))
+        return
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+        changed = False
+        for key in list(data.keys()):
+            if isinstance(data[key], list):
+                before = len(data[key])
+                data[key] = [
+                    e for e in data[key]
+                    if "magisentry" not in json.dumps(e).lower()
+                ]
+                if len(data[key]) != before:
+                    changed = True
+        if changed:
+            target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            print(T.t("ihooks_uninstalled", path=str(target)))
+        else:
+            print(T.t("ihooks_uninstall_not_found", path=str(target)))
+    except (OSError, json.JSONDecodeError) as e:
+        print(T.t("ihooks_error", error=str(e)))
+
+
+def uninstall_aider() -> None:
+    """Remove .aider.conf.yml (project-local, best-effort)."""
+    target = Path.cwd() / ".aider.conf.yml"
+    if target.exists():
+        target.unlink()
+        print(T.t("ihooks_uninstalled", path=str(target)))
+    else:
+        print(T.t("ihooks_uninstall_not_found", path=str(target)))
+
+
+def _uninstall_vscode_tasks() -> None:
+    """Strip MagiSentry tasks from .vscode/tasks.json (project-local).
+    Shared by both Copilot and Cline uninstallers."""
+    target = Path.cwd() / ".vscode" / "tasks.json"
+    if not target.exists():
+        print(T.t("ihooks_uninstall_not_found", path=str(target)))
+        return
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+        tasks = data.get("tasks", [])
+        cleaned = [
+            t for t in tasks
+            if "magisentry" not in json.dumps(t).lower()
+        ]
+        if len(cleaned) != len(tasks):
+            data["tasks"] = cleaned
+            target.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            print(T.t("ihooks_uninstalled", path=str(target)))
+        else:
+            print(T.t("ihooks_uninstall_not_found", path=str(target)))
+    except (OSError, json.JSONDecodeError) as e:
+        print(T.t("ihooks_error", error=str(e)))
+
+
+def uninstall_copilot() -> None:
+    _uninstall_vscode_tasks()
+
+
+def uninstall_cline() -> None:
+    _uninstall_vscode_tasks()
+
+
+def uninstall_codex() -> None:
+    # Codex relies on the shell shim — which lives in SHIM_DIR and is
+    # cleared together with ~/.magisentry by the top-level uninstaller.
+    print(T.t("ihooks_uninstall_not_found",
+              path=str(SHIM_DIR) + " (removed with .magisentry)"))
+
+
+def uninstall_gemini_cli() -> None:
+    print(T.t("ihooks_uninstall_not_found",
+              path=str(SHIM_DIR) + " (removed with .magisentry)"))
+
+
+def uninstall_shell_shim() -> None:
+    """The shim files themselves live in SHIM_DIR which is deleted with
+    ~/.magisentry by the top-level uninstaller. The user-PATH entry is
+    cleaned separately by `uninstaller._remove_*_path_hook`."""
+    print(T.t("ihooks_uninstall_not_found",
+              path=str(SHIM_DIR) + " (removed with .magisentry)"))
+
+
+UNINSTALL_TOOLS: Dict[str, Callable[[], None]] = {
+    "claude_code": uninstall_claude_code,
+    "cursor":      uninstall_cursor,
+    "windsurf":    uninstall_windsurf,
+    "continue":    uninstall_continue,
+    "aider":       uninstall_aider,
+    "codex":       uninstall_codex,
+    "gemini_cli":  uninstall_gemini_cli,
+    "copilot":     uninstall_copilot,
+    "cline":       uninstall_cline,
+    "shell":       uninstall_shell_shim,
+}
+
+
 # -------------------- CLI --------------------
 
 def _ask_yn(prompt: str) -> bool:
@@ -229,7 +388,32 @@ def main(argv: Optional[List[str]] = None) -> int:
                    help="Install hooks for every supported tool.")
     p.add_argument("--interactive", action="store_true",
                    help="Ask per tool. Recommended for first-time setup.")
+    p.add_argument("--uninstall", action="store_true",
+                   help="Remove installed hooks for the selected tools.")
     args = p.parse_args(argv)
+
+    # Uninstall path runs BEFORE the install argument validation —
+    # `--uninstall --all` is a legitimate invocation with no install
+    # flags, and we don't want it to hit `print_help()`.
+    if args.uninstall:
+        tools_to_uninstall: List[str] = []
+        if args.all:
+            tools_to_uninstall = list(UNINSTALL_TOOLS)
+        elif args.tool:
+            tools_to_uninstall = args.tool
+        else:
+            p.print_help()
+            return 0
+        for name in tools_to_uninstall:
+            if name not in UNINSTALL_TOOLS:
+                continue
+            print(T.t("ihooks_tool_section", name=name))
+            try:
+                UNINSTALL_TOOLS[name]()
+            except Exception as e:
+                print(T.t("ihooks_error", error=str(e)))
+        print(T.t("ihooks_uninstall_done"))
+        return 0
 
     if not args.tool and not args.all and not args.interactive:
         p.print_help()

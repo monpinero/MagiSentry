@@ -1,20 +1,17 @@
 @echo off
 rem ============================================================
-rem  MagiSentry - Windows installer
+rem  MagiSentry - Windows installer (uv tool, v1.0.3+)
 rem ============================================================
-rem  1. Verifies Python is available.
-rem  2. Installs MagiSentry in editable mode from the local source
-rem     tree (the package is not yet on PyPI).
-rem  3. Runs the setup wizard (language, mode, per-step opt-ins,
-rem     VirusTotal key registration).
-rem  4. Hands off to install_hooks.py for AI-tool integration.
+rem  1. Detect uv; bootstrap it via the official installer if missing.
+rem  2. Migrate any pre-existing `pip install --user` deployment to uv.
+rem  3. `uv tool install --editable .` from the local clone so dev
+rem     changes propagate without reinstalling.
+rem  4. Register ~/.magisentry/bin on PATH (for the shell shims).
+rem  5. Run the setup wizard and the AI-tool hook installer.
+rem  6. Build the initial integrity manifest.
 rem ============================================================
 
-rem Switch CMD to UTF-8 so Slovak characters (š, č, ľ, á, ú, etc.)
-rem render correctly in the uninstall menu, the "Vas vyber" prompt,
-rem and the final pause message. Default Windows code page (cp852 /
-rem cp1250) mangles them. `>nul` hides the "Active code page: 65001"
-rem banner — the user shouldn't see implementation noise.
+rem Switch CMD to UTF-8 so Slovak characters render correctly.
 chcp 65001 >nul
 
 setlocal ENABLEDELAYEDEXPANSION
@@ -23,9 +20,7 @@ echo.
 echo === MagiSentry Windows installer ===
 echo.
 
-rem --- 0. Language choice (BEFORE any pip install) -----------------
-rem Wizard reads MAGISENTRY_LANG and skips its own language prompt
-rem when this is already set to en or sk.
+rem --- 0. Language choice (BEFORE any installation work) -----------
 echo Choose language / Zvolte jazyk:
 echo [1] English
 echo [2] Slovencina
@@ -36,41 +31,154 @@ echo.
 echo Selected language: %MAGISENTRY_LANG%
 echo.
 
-rem --- 0b. Detect existing install --------------------------------
-where magisentry >nul 2>&1
-if %errorlevel% == 0 (
-  echo.
+rem --- 0b. Auto-detect + Action menu ------------------------------
+rem Ak MagiSentry nie je nainstalovana - preskoc menu, instaluj.
+rem Ak je nainstalovana - ponukni iba Odinstalovat alebo Zrusit.
+rem Reinstal nie je v menu (bezpecnostny dovod: uv tool install
+rem vzdy re-resolvuje celu izolaciu - potencialny vektor utoku).
+rem Zmena nastaveni: magisentry config --wizard
+set "MAGI_INSTALLED=0"
+if exist "%APPDATA%\uv\tools\magisentry\Scripts\magisentry.exe" (
+  set "MAGI_INSTALLED=1"
+)
+
+set "ACTION=1"
+if "%MAGI_INSTALLED%"=="1" (
   if "%MAGISENTRY_LANG%"=="sk" (
-    echo MagiSentry je uz nainstalovany.
-    echo [1] Preinstalovat / Aktualizovat
-    echo [2] Odinstalovat
-    echo [3] Zrusit
+    echo MagiSentry je uz nainstalovana.
+    echo.
+    echo [1] Odinstalovat
+    echo [2] Zrusit
   ) else (
     echo MagiSentry is already installed.
-    echo [1] Reinstall / Update
-    echo [2] Uninstall
-    echo [3] Cancel
+    echo.
+    echo [1] Uninstall
+    echo [2] Cancel
   )
   echo.
-  choice /c 123 /n /m "Your choice / Vas vyber: "
-  if errorlevel 3 exit /b 0
-  if errorlevel 2 (
-    magisentry uninstall
+  choice /c 12 /n /m "Your choice / Vas vyber: "
+  set "ACTION=!errorlevel!"
+  echo.
+  if "!ACTION!"=="2" (
+    if "%MAGISENTRY_LANG%"=="sk" (
+      echo Zrusene. Nastavenia zmenite cez: magisentry config --wizard
+    ) else (
+      echo Cancelled. Change settings via: magisentry config --wizard
+    )
+    echo.
+    pause >nul
+    endlocal
     exit /b 0
   )
-  rem errorlevel 1 = reinstall, fall through to pip install
+  rem When installed, [1] means Uninstall. Remap to action 3 so the
+  rem existing uninstall path below handles it.
+  set "ACTION=3"
+) else (
+  if "%MAGISENTRY_LANG%"=="sk" (
+    echo MagiSentry nie je nainstalovana. Spustam instalaciu...
+  ) else (
+    echo MagiSentry not installed. Starting fresh installation...
+  )
+  echo.
 )
 
-where python >nul 2>nul
+rem --- 0c. Uninstall path -----------------------------------------
+if "%ACTION%"=="3" (
+  echo Uninstalling MagiSentry / Odinstalujem MagiSentry...
+  rem Refresh PATH for this session so magisentry-install-hooks
+  rem resolves to the uv tool deployment we're about to remove.
+  rem Without this the next line would either not find the entry
+  rem point or pick up a stale one from somewhere else.
+  set "PATH=%APPDATA%\uv\tools\magisentry\Scripts;%PATH%"
+  rem Clean up AI-tool hook entries BEFORE removing the binary —
+  rem once magisentry-install-hooks is gone we can't run it.
+  if "%MAGISENTRY_LANG%"=="sk" (
+    echo Odstranujem AI-tool hooky...
+  ) else (
+    echo Removing AI-tool hooks...
+  )
+  magisentry-install-hooks --uninstall --all 2>nul
+  rem Kill any running magisentry.exe — uv can't replace a locked
+  rem binary on Windows, so this prevents the next install from
+  rem hitting "file in use".
+  taskkill /f /im magisentry.exe >nul 2>&1
+  uv tool uninstall magisentry >nul 2>&1
+  rem Fallback for installations that pre-date the uv migration —
+  rem `pip uninstall` is a no-op if the package isn't there.
+  python -m pip uninstall magisentry -y >nul 2>&1
+  rem Clean up config + shim directory left by MagiSentry. Without
+  rem this, a fresh reinstall would inherit stale ~/.magisentry/
+  rem contents (config.json, integrity_manifest, shim batch files)
+  rem and the "uninstall" wouldn't really feel uninstalled.
+  if exist "%USERPROFILE%\.magisentry" (
+    rmdir /s /q "%USERPROFILE%\.magisentry"
+    if "%MAGISENTRY_LANG%"=="sk" (
+      echo Konfiguracny priecinok vymazany.
+    ) else (
+      echo Config directory removed.
+    )
+  )
+  if "%MAGISENTRY_LANG%"=="sk" (
+    echo MagiSentry odinstalovana.
+  ) else (
+    echo MagiSentry uninstalled.
+  )
+  echo.
+  pause >nul
+  endlocal
+  exit /b 0
+)
+
+rem --- 1. Ensure uv is present ------------------------------------
+where uv >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] Python is not on PATH. Install Python 3.8+ from https://python.org
-  echo         and re-run this installer.
+  echo uv not found. Installing via the official installer...
+  powershell -ExecutionPolicy Bypass -NoProfile -Command "irm https://astral.sh/uv/install.ps1 | iex"
+  if errorlevel 1 (
+    echo [ERROR] uv install failed. Install uv manually from https://astral.sh/uv/ and re-run.
+    exit /b 1
+  )
+  rem The uv installer drops `uv.exe` into %USERPROFILE%\.local\bin and
+  rem updates user PATH for new terminals, but the *current* CMD process
+  rem still has the old PATH. Prepend the install dir so `uv` resolves
+  rem immediately in this very session.
+  set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+)
+
+where uv >nul 2>nul
+if errorlevel 1 (
+  echo [ERROR] uv still not on PATH after install. Open a NEW terminal and re-run.
   exit /b 1
 )
+echo uv detected:
+uv --version
 
-rem --- 1. Install in editable mode from local source ---------------
-rem %~dp0 expands to the directory of this script (with trailing slash);
-rem its parent is the project root that contains setup.py.
+rem --- 2a. Pre-install cleanup ------------------------------------
+rem Fresh install: vzdy --force pre cistu izolaciu.
+echo Preparing clean isolation...
+taskkill /f /im magisentry.exe >nul 2>&1
+uv tool uninstall magisentry >nul 2>&1
+
+rem --- 2b. Migrate any pre-existing pip install -------------------
+set "PIP_MAGI="
+where magisentry >nul 2>nul
+if not errorlevel 1 (
+  for /f "delims=" %%P in ('where magisentry') do (
+    echo %%P | findstr /I "\\uv\\" >nul
+    if errorlevel 1 set "PIP_MAGI=%%P"
+  )
+)
+if defined PIP_MAGI (
+  echo Found existing pip installation. Migrating...
+  python -m pip uninstall magisentry -y >nul 2>&1
+  if exist "%USERPROFILE%\.magisentry\bin" (
+    del /q "%USERPROFILE%\.magisentry\bin\*.bat" 2>nul
+  )
+) else (
+  echo Fresh installation detected.
+)
+
+rem --- 3. Locate project root -------------------------------------
 set "PROJECT_ROOT=%~dp0.."
 
 if not exist "%PROJECT_ROOT%\setup.py" (
@@ -79,47 +187,54 @@ if not exist "%PROJECT_ROOT%\setup.py" (
   exit /b 1
 )
 
-echo Installing MagiSentry in editable mode from local source...
+rem --- 4. Install via uv tool (editable from local clone) ---------
+echo.
+echo Installing MagiSentry via uv tool ^(editable from local clone^)...
 echo   source: %PROJECT_ROOT%
-python -m pip install --user --upgrade pip
-python -m pip install --user -e "%PROJECT_ROOT%"
+uv tool install --force --editable "%PROJECT_ROOT%"
 if errorlevel 1 (
-  echo [ERROR] pip install -e failed. See output above.
+  echo [ERROR] uv tool install failed. See output above.
   exit /b 1
 )
 
-rem --- 1b. Register Python user scripts dir on user PATH ----------
-rem `pip install --user` drops magisentry.exe into a per-user scripts
-rem dir that isn't on PATH by default. Without this, `magisentry`
-rem won't be callable from a fresh terminal even though pip succeeded.
+rem --- 4b. Refresh PATH for this session --------------------------
+rem `uv tool install` registered its bin dir on the user PATH for new
+rem terminals, but this CMD process still has the old PATH. Prepend
+rem the uv tool bin directory so the `magisentry` / `magisentry-install-hooks`
+rem entry points resolve in this very session — without this, the
+rem subsequent calls would fall through to the legacy pip install (or
+rem fail with "not recognized") instead of the new uv-isolated copy.
+rem uv ukladá tool izolácie do %APPDATA%\uv\tools\ (Roaming), NIE
+rem do %LOCALAPPDATA%. platformdirs::user_data_dir na Windows = APPDATA.
+set "PATH=%USERPROFILE%\.local\bin;%APPDATA%\uv\tools\magisentry\Scripts;%PATH%"
+
+rem --- 5. Register ~/.magisentry/bin on PATH ----------------------
 echo.
 echo Registering PATH entries...
-python -m magisentry._install_path
+magisentry-install-path
 if errorlevel 1 (
   echo [WARN] PATH registration returned non-zero. You may need to add
-  echo        the Python user scripts directory to PATH manually.
+  echo        %USERPROFILE%\.magisentry\bin to PATH manually.
 )
 
-rem --- 2. First-run wizard ----------------------------------------
+rem --- 6. First-run wizard ----------------------------------------
 echo.
 echo Launching the setup wizard...
-python -m magisentry.scanner config --wizard
+magisentry config --wizard --mode=fresh
 if errorlevel 1 (
-  echo [WARN] Wizard exited with non-zero status. You can re-run it later via:
+  echo [WARN] Wizard exited with non-zero status. Re-run:
   echo        magisentry config --wizard
 )
 
-rem --- 3. Hook installation --------------------------------------
+rem --- 7. Hook installation --------------------------------------
 echo.
 echo Installing AI-tool hooks (interactive)...
-python -m magisentry.install_hooks --interactive
+magisentry-install-hooks --interactive
 if errorlevel 1 (
   echo [WARN] Hook installer exited with non-zero status.
 )
 
-rem --- 4. Build initial integrity manifest ------------------------
-rem `--yes` skips the interactive [y/N]; only the setup script may
-rem use this flag, never an AI agent at runtime.
+rem --- 8. Build initial integrity manifest ------------------------
 echo.
 echo Building initial integrity manifest...
 magisentry integrity update --yes

@@ -55,6 +55,46 @@ _INSTALL_VERBS = {
     "pnpm": {"install", "i", "add"},
 }
 
+
+def normalise_uv_args(rest: List[str]) -> Optional[List[str]]:
+    """Translate `uv` sub-command tokens to a list of packages to scan.
+
+    Recognised install variants (treated as `pip install <packages>`):
+      uv add <pkg>...                  (project deps via pyproject)
+      uv pip install <pkg>...          (pip-compat shim)
+      uv tool install <pkg>            (isolated CLI tool)
+
+    Returns the list of positional package specs (flags stripped), or
+    None for any other sub-command (`sync`, `run`, `build`, `lock`,
+    `venv`, `tool list`, ...). The caller is expected to passthrough
+    when None is returned.
+    """
+    if not rest:
+        return None
+    if rest[0] == "add":
+        positionals = _strip_flags(rest[1:], "pip")
+        return positionals or None
+    if len(rest) >= 2 and rest[0] == "pip" and rest[1] == "install":
+        positionals = _strip_flags(rest[2:], "pip")
+        return positionals or None
+    if len(rest) >= 2 and rest[0] == "tool" and rest[1] == "install":
+        positionals = _strip_flags(rest[2:], "pip")
+        return positionals or None
+    return None
+
+
+def normalise_uvx_args(rest: List[str]) -> Optional[List[str]]:
+    """Translate `uvx` sub-command tokens to a list of packages to scan.
+
+    `uvx` is primarily a runner (`uvx <cmd>` ≈ `uv tool run <cmd>`); the
+    only install-shaped variant we vet is `uvx install <pkg>`. Everything
+    else passes through.
+    """
+    if rest and rest[0] == "install":
+        positionals = _strip_flags(rest[1:], "pip")
+        return positionals or None
+    return None
+
 # Used by parse_special_command (step 8 / step 9). Distinct API from
 # parse_install_command because the "package" semantics differ.
 _VSCODE_BINS = {"code", "code.cmd", "code.exe", "code-insiders",
@@ -131,6 +171,23 @@ def parse_install_command(command: str) -> Optional[Tuple[str, List[str]]]:
             continue
         head = tokens[i]
         rest = tokens[i + 1:]
+
+        # uv / uvx: hand off to the dedicated normaliser. AI-agent hooks
+        # (e.g. Claude Code Bash interception) parse the raw command,
+        # so this branch is what lets `uv add requests` be scanned even
+        # without going through our shim — the agent may call uv via
+        # an absolute path that skips ~/.magisentry/bin/.
+        head_name = head.split("/")[-1].split("\\")[-1].lower()
+        if head_name in ("uv", "uv.exe"):
+            packages = normalise_uv_args(rest)
+            if packages:
+                return "pip", packages
+            continue
+        if head_name in ("uvx", "uvx.exe"):
+            packages = normalise_uvx_args(rest)
+            if packages:
+                return "pip", packages
+            continue
 
         ecosystem = _detect_ecosystem(head, rest)
         if ecosystem is None:
