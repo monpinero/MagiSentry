@@ -136,7 +136,21 @@ def run(ecosystem, package, config, t, ctx):
                 # Skip pip-audit for npm — its run() already self-skips.
                 result = mod.run(eco, pkg, config, t, sub_ctx)
                 if result.status == "THREAT":
-                    threats.append(f"{eco}:{pkg} -> {label}: {result.message}")
+                    # Special-case: step1's ONLY THREAT path is HTTP 404
+                    # "package not found on registry". For Dockerfiles
+                    # that very often means an internal / private package
+                    # (corporate artifactory, GHCR, internal index) — not
+                    # a malicious package. Treat as a warning so the user
+                    # can verify manually instead of blocking every build
+                    # at a company that uses private deps.
+                    if label == "step1":
+                        warnings.append(
+                            t.t("step10_private_pkg_warn", package=pkg)
+                        )
+                    else:
+                        threats.append(
+                            f"{eco}:{pkg} -> {label}: {result.message}"
+                        )
                 elif result.status == "OK":
                     warnings.extend(
                         f"{eco}:{pkg} {w}" for w in result.warnings

@@ -25,9 +25,24 @@ def run(ecosystem, package, config, t, ctx):
     name, version = split_pkg(ecosystem, package)
     if not version:
         version = _resolve_latest(ecosystem, name)
-    body = {"package": {"name": name, "ecosystem": ECOSYSTEM[ecosystem]}}
-    if version:
-        body["version"] = version
+    # CRITICAL: refuse to query OSV without a concrete version. OSV
+    # interprets a version-less query as "return ALL historical CVEs
+    # for this package" — which is correct for the package itself but
+    # WRONG for "this exact install". When _resolve_latest() returned
+    # None (PyPI/npm unreachable), forwarding the query without a
+    # version would surface decade-old fixed CVEs as fresh THREATs.
+    # Better to return a retryable FAILURE so the user knows the scan
+    # is incomplete than to silently fabricate threats from old CVEs.
+    if not version:
+        return StepResult(
+            status="FAILURE", step=STEP,
+            message=t.t("step2_failure_no_version", package=name),
+            possible_cause=t.t("step2_cause_no_version"),
+            recommendation=t.t("step2_recommend_no_version"),
+            can_retry=True,
+        )
+    body = {"package": {"name": name, "ecosystem": ECOSYSTEM[ecosystem]},
+            "version": version}
     try:
         data = http_json("https://api.osv.dev/v1/query",
                          data=json.dumps(body).encode("utf-8"),

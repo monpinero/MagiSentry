@@ -81,11 +81,23 @@ def run(ecosystem, package, config, t, ctx):
     malicious = int(stats.get("malicious") or 0)
     suspicious = int(stats.get("suspicious") or 0)
     total = sum(int(v or 0) for v in stats.values()) or 0
-    if malicious > 0 or suspicious > 0:
+    # Single-engine FPs are common on VirusTotal — every AV vendor has
+    # its own quirks (one engine flagging a popular wheel because of a
+    # one-byte string match is not credible signal). Require corroborating
+    # signal: >=2 "malicious" or >=3 "suspicious" engines. A single hit
+    # bubbles up as a warning so the user still sees it, but doesn't
+    # block install on its own.
+    if malicious >= 2 or suspicious >= 3:
         return StepResult(
             status="THREAT", step=STEP,
             message=t.t("step5_threat_av",
-                        malicious=malicious + suspicious, total=total),
+                        malicious=malicious, suspicious=suspicious,
+                        total=total),
             can_retry=False,
         )
-    return StepResult(status="OK", step=STEP)
+    warnings = []
+    if malicious or suspicious:
+        warnings.append(t.t("step5_warning_single_engine",
+                            malicious=malicious, suspicious=suspicious,
+                            total=total))
+    return StepResult(status="OK", step=STEP, warnings=warnings)

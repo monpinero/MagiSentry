@@ -29,7 +29,9 @@ Nie som programátor. Neovládam Python, JavaScript ani žiadny iný programovac
 
 Začal som pátrať. Zistil som, že útoky na dodávateľský reťazec open source balíčkov sú reálne, časté a narastajú. A AI agenti sú pre útočníkov ideálny cieľ — inštalujú balíčky automaticky, rýchlo, bez akýchkoľvek otázok.
 
-Tak som sa rozhodol niečo s tým urobiť — s pomocou AI, od nuly, bez predchádzajúcich skúseností s kódovaním. Kód funguje, je otestovaný, beží lokálne. Nie je to komerčný produkt — je to nástroj, ktorý som chcel mať sám pre seba, a rozhodol som sa ho zdieľať.
+Myšlienka sa sformovala, keď som narazil na Magiku — open-source engine od Googlu na detekciu typov súborov. Uvedomil som si, že by mohla byť základom niečoho väčšieho: skenera, ktorý zachytáva balíčky predtým, ako sa dostanú do prostredia AI agenta. Z tohto nápadu vznikol MagiSentry. Názov odráža jeho pôvod — Magika v jadre, Sentry ako jeho účel: bdelý strážnik, ktorý kontroluje, čo váš AI agent chystá nainštalovať.
+
+Postavené s pomocou AI, od nuly, bez predchádzajúcich skúseností s kódovaním. Kód funguje. Je otestovaný. Beží lokálne. A teraz je tu pre každého, kto ho chce.
 
 ---
 
@@ -134,15 +136,21 @@ MagiSentry posiela štruktúrované upozornenia na **stderr**, čo znamená, že
 
 ## Inštalácia
 
-**Požiadavky:** Python 3.8+, Git, Windows / Linux / macOS
+**Požiadavky:** Python 3.8+, [uv](https://astral.sh/uv/), Git, Windows / Linux / macOS
 
 **Rýchly štart (PyPI):**
 ```bash
-pip install magisentry
+pip install uv          # ak uv ešte nemáš nainštalovaný
+uv tool install magisentry
 magisentry-install-hooks
 ```
 
-> Pre úplné nastavenie (integrácia PATH, hooky pre jednotlivé nástroje) použite platformové setup skripty nižšie.
+`uv tool install` umiestni MagiSentry do vlastného izolovaného prostredia. Iné `pip install` / `uv add` na tom istom stroji už nikdy nemôžu kolidovať s pinmi závislostí MagiSentry (napr. `magika==1.0.3`).
+
+> **Poznámka k prvej inštalácii**
+> Úplne prvá inštalácia samotného `uv` aj MagiSentry sa *neskenuje* — bezpečnostný nástroj nemôže skenovať vlastný bootstrap. Je to očakávané. Každá ďalšia inštalácia na stroji je už chránená.
+
+> Pre úplné nastavenie (integrácia PATH, hooky pre jednotlivé nástroje, integrity manifest) použite platformové setup skripty nižšie.
 
 ```bash
 # 1. Klonovanie repozitára
@@ -168,23 +176,40 @@ chmod +x setup_mac.sh && ./setup_mac.sh
 echo 'export VT_API_KEY="tvoj_api_kluc"' >> ~/.zshrc && source ~/.zshrc
 ```
 
-Setup skript nainštaluje základné závislosti (`magika`, `pip-audit`) a zaregistruje príkaz `magisentry` v tvojom PATH.
+Každý setup skript zavedie `uv` ak chýba, prevedie prípadnú staršiu `pip install --user` inštaláciu na izolované uv tool prostredie, nainštaluje MagiSentry z lokálneho klonu v editačnom režime (`uv tool install --editable .`) a zaregistruje príkaz `magisentry` v tvojom PATH.
 
 > **Nemáš VirusTotal kľúč?** Skener naďalej funguje — Krok 5 sa preskočí s upozornením. Všetky ostatné kroky zostávajú plne funkčné.
+
+> **Bezplatné API VirusTotal** je určené na osobné, nekomerčné použitie. MagiSentry spĺňa podmienky — je to bezplatný open-source nástroj pre individuálnych vývojárov. Limit: 500 dopytov/deň, 4 požiadavky/min.
+> [Bezplatná registrácia → virustotal.com](https://www.virustotal.com)
 
 ### Voliteľné doplnky
 
 Nainštaluj len to, čo potrebuješ:
 
 ```bash
-pip install magisentry[semgrep]   # Krok 7 — statická analýza kódu (Python 3.10+)
-pip install magisentry[yara]      # Krok 8 — zhoda vzorov
-pip install magisentry[all]       # všetko
+uv tool install "magisentry[semgrep]"   # Krok 7 — statická analýza kódu (Python 3.10+)
+uv tool install "magisentry[yara]"      # Krok 8 — zhoda vzorov
+uv tool install "magisentry[all]"       # všetko
 ```
 
 > Desktopové notifikácie fungujú automaticky na všetkých platformách — nie je potrebná žiadna extra inštalácia.
 
 > Ak si inštaloval cez git clone, spusti tieto príkazy z klonovaného adresára.
+
+> **Poznámka:** MagiSentry pinuje semgrep na overenú verziu (`==1.162.0`).
+> semgrep 1.163.0 obsahuje Windows RPC bug — ak wizard ponúkne
+> aktualizáciu semgrep, odmietni ju až do ďalšieho releasu MagiSentry.
+
+### Zmena nastavení po inštalácii
+
+Na zmenu nastavení (zapnutie/vypnutie krokov, API kľúč, jazyk) spustite wizard priamo:
+
+```bash
+magisentry config --wizard
+```
+
+Reinštal cez setup skript nie je dostupný zámerne. Opätovné spustenie setup skriptu na nainštalovanom systéme ponúka iba **Odinštalovať** — chráni izolované prostredie pred neúmyselnými zmenami závislostí. Manuálna aktualizácia: `uv tool upgrade magisentry`.
 
 ---
 
@@ -198,6 +223,29 @@ magisentry pip install -r requirements.txt
 ```
 
 > `pip3` a `python -m pip install` sú tiež automaticky zachytené.
+
+### Balíčky — uv
+```bash
+magisentry uv add requests
+magisentry uv pip install "numpy==1.26.4"
+magisentry uv tool install ruff
+```
+
+> `uv add`, `uv pip install`, `uv tool install` a `uvx install` sú automaticky zachytené. Neinštalačné podpríkazy (`uv sync`, `uv run`, `uv build`, `uv lock`, `uv venv`, ...) prejdú bez skenovania.
+
+### Manuálne spustenie v PowerShell
+
+Ak nepoužívaš AI coding agenta, môžeš spustiť MagiSentry priamo v PowerShell pred inštaláciou ľubovoľného balíčka:
+
+```bash
+magisentry pip install requests
+magisentry pip install "numpy==1.26.4"
+magisentry pip install -r requirements.txt
+```
+
+Toto je rovnaký príkaz, ktorý hook posiela automaticky keď Claude Code alebo iný agent spustí pip install — len ho voláš sám. Celý 10-krokový pipeline prebehne identicky v oboch prípadoch.
+
+> **Tip:** Po inštalácii otvor nové okno PowerShell, aby si sa uistil, že príkaz magisentry je dostupný v PATH.
 
 ### Balíčky — npm / yarn
 ```bash
@@ -311,6 +359,33 @@ magisentry whitelist add pip:nazov-balicka
 
 ---
 
+## Známe problémy
+
+### Semgrep — prvý sken po inštalácii môže zlyhať
+
+Keď semgrep beží prvýkrát, stiahne rulsety (`p/supply-chain`, `p/secrets`)
+z internetu do lokálnej cache. Ak je spojenie pomalé alebo server neodpovie
+včas, sken zlyhá s hláškou:
+
+```
+[7/8] Semgrep — statická analýza kódu
+  -> ZLYHANIE: Semgrep spadol pri spracovaní vstupu.
+```
+
+**Riešenie:** Spusti rovnaký sken znova. Druhý sken použije cache
+a prebehne správne.
+
+### Semgrep 1.163.0 — nefunkčný na Windows
+
+semgrep 1.163.0 obsahuje Windows RPC bug ktorý spôsobuje crash kroku 7
+pri každom skene. MagiSentry pinuje semgrep na `==1.162.0` ktorý funguje
+správne.
+
+Ak wizard ponúkne aktualizáciu semgrep, odmietni ju (vyber **[3] Preskočiť
+túto verziu**) až kým ďalší release MagiSentry nepotvrdí kompatibilitu.
+
+---
+
 ## Konfigurácia a dáta
 
 ### Lokálny dátový adresár
@@ -390,6 +465,7 @@ MagiSentry je navrhnutý tak, aby minimalizoval zdieľanie dát v cloude:
 | YARA | Vždy zadarmo | Nie | **Áno** |
 | VS Code Marketplace API | Vždy zadarmo | Nie | Nie |
 | Analýza Dockerfile | Vždy zadarmo | Nie | **Áno** |
+| uv (Astral) | Vždy zadarmo | Nie | **Áno** |
 
 ---
 

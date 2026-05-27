@@ -228,7 +228,34 @@ def _check_path_order() -> None:
 
 # ---------- update check ----------
 
+def _version_tuple(v: str) -> tuple:
+    """Convert a version string to a comparable tuple.
+
+    Simple major.minor.patch parser — no external dependency.
+    Non-numeric segments (e.g. '1.0.3a1') fall back to 0 so
+    the comparison degrades gracefully rather than crashing.
+    Cross-platform: no OS-specific logic.
+    """
+    try:
+        return tuple(int(x) for x in str(v).split("."))
+    except (ValueError, AttributeError):
+        return (0,)
+
+
 def _check_for_update(t: Translator, config: Optional[Config] = None) -> None:
+    """Public wrapper — never lets a startup-check exception abort a scan.
+
+    The update check is purely informational; a broken PyPI response, a
+    terminal that can't encode a glyph, or any other failure mode must
+    never block the user's `magisentry pip install …`. Mirrors the same
+    swallow-everything pattern used by `check_uv_isolation`."""
+    try:
+        _check_for_update_impl(t, config)
+    except Exception:
+        return
+
+
+def _check_for_update_impl(t: Translator, config: Optional[Config] = None) -> None:
     """Check PyPI for a newer MagiSentry release and offer an interactive
     [1]–[4] menu (Update+scan / Update / Skip / Remind later).
 
@@ -248,8 +275,8 @@ def _check_for_update(t: Translator, config: Optional[Config] = None) -> None:
     except Exception:
         return   # network unavailable — silently skip
 
-    if not latest or latest == __version__:
-        return   # already up to date
+    if not latest or _version_tuple(latest) <= _version_tuple(__version__):
+        return   # already up to date or running a newer local build
 
     # 2. Honour skip / remind state.
     if config is not None:
@@ -539,7 +566,7 @@ def _unpack_to_temp(archive: Path) -> Path:
     Caller MUST `shutil.rmtree(tmpdir, ignore_errors=True)` in a finally
     block. On failure here the partial tempdir is cleaned up before the
     exception propagates."""
-    tmpdir = Path(tempfile.mkdtemp(prefix="magisentry_local_"))
+    tmpdir = Path(tempfile.mkdtemp(prefix="magisentry_local_")).resolve()
     try:
         name = archive.name.lower()
         if name.endswith((".whl", ".zip", ".egg")):
@@ -652,7 +679,7 @@ def scan_git_url(url: str, config: Config, t: Translator) -> int:
     print(t.t("scan_git_header", url=url))
     print(t.t("scan_git_skipping_steps"))
 
-    pip_tmpdir = Path(tempfile.mkdtemp(prefix="magisentry_git_"))
+    pip_tmpdir = Path(tempfile.mkdtemp(prefix="magisentry_git_")).resolve()
     extracted: Optional[Path] = None
     threats: List[StepResult] = []
     failsecure_blocked = False
@@ -950,7 +977,22 @@ def _handle_config_command(args: List[str], config: Optional[Config]) -> int:
         return EXIT_OK
     arg = args[0]
     if arg == "--wizard":
-        run_wizard()
+        # Optional `--mode fresh|reinstall` selects how
+        # `_install_optional_extra` treats already-installed extras.
+        # Default "fresh" preserves the previous always-install
+        # behaviour for callers that don't pass the flag.
+        from .wizard import WIZARD_MODE_FRESH, WIZARD_MODE_REINSTALL
+        wmode = WIZARD_MODE_FRESH
+        for i, tok in enumerate(args[1:], start=1):
+            if tok == "--mode" and i + 1 <= len(args) - 1:
+                cand = args[i + 1]
+                if cand in (WIZARD_MODE_FRESH, WIZARD_MODE_REINSTALL):
+                    wmode = cand
+            elif tok.startswith("--mode="):
+                cand = tok.split("=", 1)[1]
+                if cand in (WIZARD_MODE_FRESH, WIZARD_MODE_REINSTALL):
+                    wmode = cand
+        run_wizard(mode=wmode)
         return EXIT_OK
     # Each branch must compute `change_desc` describing the diff for
     # the audit log: "field: <old> → <new>". Without this an attacker
@@ -999,6 +1041,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     """CLI entry point. Catches Ctrl+C anywhere in the dispatch tree
     so users see a clean message instead of a Python traceback. The
     real work lives in `_main_impl` to keep this wrapper trivial."""
+    # Force stdout/stderr to UTF-8 so emoji / Slovak diacritics never
+    # crash a scan on a Windows console using cp1250. `errors="replace"`
+    # is the belt-and-braces fallback for any byte the terminal cannot
+    # render — we'd rather print `?` than abort the scan.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except (OSError, ValueError):
+                pass
     try:
         return _main_impl(argv)
     except KeyboardInterrupt:
@@ -1028,7 +1080,18 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
     # trigger the first-run wizard AND then re-enter the wizard via the
     # dispatch table below — running setup twice.
     if argv and argv[0] == "config" and len(argv) > 1 and argv[1] == "--wizard":
-        run_wizard()
+        from .wizard import WIZARD_MODE_FRESH, WIZARD_MODE_REINSTALL
+        wmode = WIZARD_MODE_FRESH
+        for i, tok in enumerate(argv[2:], start=2):
+            if tok == "--mode" and i + 1 <= len(argv) - 1:
+                cand = argv[i + 1]
+                if cand in (WIZARD_MODE_FRESH, WIZARD_MODE_REINSTALL):
+                    wmode = cand
+            elif tok.startswith("--mode="):
+                cand = tok.split("=", 1)[1]
+                if cand in (WIZARD_MODE_FRESH, WIZARD_MODE_REINSTALL):
+                    wmode = cand
+        run_wizard(mode=wmode)
         return EXIT_OK
     # `integrity update --yes` is part of setup scripts and must run
     # BEFORE the first-run wizard check — otherwise a fresh install
@@ -1052,6 +1115,8 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
     t = Translator(config.language if config else "en")
     _check_path_order()
     _check_integrity(t)
+    from .self_audit import check_uv_isolation
+    check_uv_isolation(t)
     _check_for_update(t, config)
     pending_updates = print_audit(t, config)
     if pending_updates and config is not None:
@@ -1067,6 +1132,21 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
     if cmd == "audit":
         from .audit import run_audit
         return run_audit(argv[1:], config, t)
+    if cmd == "self-audit":
+        # Explicit user-facing verb. The startup block above (just
+        # before this dispatch table) already ran `check_uv_isolation`
+        # and `print_audit`, so the audit output is already on screen.
+        # Re-invoking them here would print everything twice. The verb
+        # exists purely as a documented entry point — its observable
+        # effect is the startup audit + exit 0.
+        return EXIT_OK
+    if cmd in ("uv", "uvx"):
+        # Route through the shim — same scan-then-exec semantics as the
+        # `~/.magisentry/bin/uv.bat` shell shim. Lets `magisentry uv add
+        # requests` work directly from the CLI without requiring the user
+        # to invoke `uv` through PATH.
+        from . import shim as shim_mod
+        return shim_mod.main([cmd] + argv[1:])
     if cmd in ("pip", "npm"):
         if len(argv) < 3 or argv[1] != "install":
             print(t.t("cli_usage"))

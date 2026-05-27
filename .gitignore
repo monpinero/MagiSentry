@@ -43,8 +43,13 @@ htmlcov/
 
 # Internal development files
 tasks/
+CLAUDE.md
+graphify-out/
 test_req.txt
 test_*.txt
+t*.out
+t*.err
+*.log
 
 # AI tool configs (local only)
 .aider.conf.yml

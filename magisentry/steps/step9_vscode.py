@@ -102,6 +102,28 @@ def _publisher_ext_count(publisher: str) -> Optional[int]:
     return len(exts)
 
 
+def _is_publisher_verified(market: Optional[dict]) -> bool:
+    """Heuristic: VS Code marketplace marks domain-verified publishers
+    in two places. `publisher.flags` is a comma-separated string that
+    contains "verified" once the publisher proved control of a domain;
+    `publisher.domain` is non-null on verified publishers. Either
+    signal is enough to consider them reputable for the purposes of
+    Step 8's low-install heuristic."""
+    if not market:
+        return False
+    pub = market.get("publisher") or {}
+    flags = (pub.get("flags") or "").lower()
+    if "verified" in flags:
+        return True
+    domain = pub.get("domain")
+    if domain:
+        return True
+    is_verified = pub.get("isDomainVerified")
+    if isinstance(is_verified, bool) and is_verified:
+        return True
+    return False
+
+
 def _parse_ts(s: Optional[str]) -> Optional[datetime]:
     if not s:
         return None
@@ -194,6 +216,7 @@ def run(ecosystem, package, config, t, ctx):
         download_url = (ovsx.get("files") or {}).get("download")
 
     pub_ext_count = _publisher_ext_count(publisher) if market is not None else None
+    publisher_verified = _is_publisher_verified(market)
 
     # ---- threat / warning evaluation ----
     warnings: List[str] = []
@@ -204,15 +227,30 @@ def run(ecosystem, package, config, t, ctx):
         warnings.append(t.t("step8_warning_abandoned",
                             days=(now - last_updated).days))
 
+    # pub_ext_count == 1 is the common case for new indie developers
+    # — calling it out as a "warning" creates a confusing prompt
+    # for every fresh extension. Surface it as an informational
+    # note instead. We still keep it in `warnings` so the message
+    # reaches the user, but the i18n text is intentionally neutral.
     if pub_ext_count == 1:
-        warnings.append(t.t("step8_warning_single_ext_publisher",
+        warnings.append(t.t("step8_note_single_ext_publisher",
                             publisher=publisher))
 
+    # Low-install + new-publisher is genuinely suspicious — BUT only
+    # when paired with an unverified publisher. Microsoft / domain-
+    # verified publishers occasionally push a new extension with low
+    # initial install counts (private previews, dogfooding tools);
+    # treating those as THREATs forces unnecessary [y/N] prompts.
+    # Three-way AND: low installs AND new AND not verified.
     if (installs is not None and installs < LOW_INSTALLS
             and last_updated is not None
             and (now - last_updated).days < NEW_DAYS):
-        threats.append(t.t("step8_threat_new_low_install",
-                           installs=installs))
+        if publisher_verified:
+            warnings.append(t.t("step8_warning_new_verified_publisher",
+                                installs=installs, publisher=publisher))
+        else:
+            threats.append(t.t("step8_threat_new_low_install",
+                               installs=installs))
 
     # ---- VirusTotal sub-check ----
     api_key = os.environ.get("VT_API_KEY", "").strip()
