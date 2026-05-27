@@ -5,6 +5,8 @@ Optional: if the `semgrep` binary is not on PATH, returns FAILURE with
 Yara is step 8, its own module (`step8_yara.py`) with its own config
 toggle — that's why this file no longer mentions Yara.
 """
+from __future__ import annotations
+
 import json
 import shutil
 import subprocess
