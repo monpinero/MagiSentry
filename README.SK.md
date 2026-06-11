@@ -122,6 +122,24 @@ MagiSentry obalí príkaz správcu balíčkov tak, aby inštalačné požiadavky
 
 > Každý nástroj, ktorý spúšťa `pip install`, `npm install`, `magisentry vscode install` alebo `magisentry docker build` v termináli, bude automaticky zachytený po nastavení MagiSentry.
 
+### Poznámky k inštalácii podľa nástroja
+
+**Aider** — Pre-command hook
+
+> **Inštalácia vyžadovaná pre každý projekt:** Aider číta konfiguráciu
+> z aktuálneho projektového adresára. Spusti
+> `magisentry-install-hooks --tool aider` v každom projekte kde chceš
+> ochranu. Shell shim (`~/.magisentry/bin/`) zachytáva globálne ako
+> záloha ak je prvý v PATH.
+
+**GitHub Copilot** — Prepísanie terminálovho príkazu
+
+> **Inštalácia vyžadovaná pre každý projekt:** GitHub Copilot číta
+> úlohy z `.vscode/tasks.json` v projektovom adresári. Spusti
+> `magisentry-install-hooks --tool copilot` v každom projekte kde
+> chceš ochranu. Shell shim (`~/.magisentry/bin/`) zachytáva globálne
+> ako záloha ak je prvý v PATH.
+
 ### Dodatočná ochrana — blokovanie nebezpečných príkazov
 
 MagiSentry zachytáva príkazy shellu, ktoré sa pokúšajú stiahnuť a spustiť payloady mimo správcov balíčkov.
@@ -197,9 +215,10 @@ uv tool install "magisentry[all]"       # všetko
 
 > Ak si inštaloval cez git clone, spusti tieto príkazy z klonovaného adresára.
 
-> **Poznámka:** MagiSentry pinuje semgrep na overenú verziu (`==1.162.0`).
-> semgrep 1.163.0 obsahuje Windows RPC bug — ak wizard ponúkne
-> aktualizáciu semgrep, odmietni ju až do ďalšieho releasu MagiSentry.
+> **Poznámka:** Na Windows MagiSentry spúšťa semgrep cez WMI / Task
+> Scheduler, mimo Job Object AI agenta. Tým obchádza upstream bug
+> v semgrep-core (`Unix.socketpair` EINVAL), takže aktualizácie semgrep
+> je bezpečné prijať.
 
 ### Zmena nastavení po inštalácii
 
@@ -375,14 +394,12 @@ včas, sken zlyhá s hláškou:
 **Riešenie:** Spusti rovnaký sken znova. Druhý sken použije cache
 a prebehne správne.
 
-### Semgrep 1.163.0 — nefunkčný na Windows
+### Semgrep na Windows — automatické riešenie
 
-semgrep 1.163.0 obsahuje Windows RPC bug ktorý spôsobuje crash kroku 7
-pri každom skene. MagiSentry pinuje semgrep na `==1.162.0` ktorý funguje
-správne.
-
-Ak wizard ponúkne aktualizáciu semgrep, odmietni ju (vyber **[3] Preskočiť
-túto verziu**) až kým ďalší release MagiSentry nepotvrdí kompatibilitu.
+semgrep-core má upstream bug (`Unix.socketpair` EINVAL) ktorý zhodí krok 7,
+keď semgrep beží vnútri Job Object AI agenta. MagiSentry to rieši
+automaticky: na Windows spúšťa semgrep cez WMI / Task Scheduler, mimo Job
+Object, kde beží správne. Aktualizácie semgrep je bezpečné prijať.
 
 ---
 

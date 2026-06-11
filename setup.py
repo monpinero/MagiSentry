@@ -21,7 +21,7 @@ LONG_DESCRIPTION = README.read_text(encoding="utf-8") if README.exists() else (
 
 setup(
     name="magisentry",
-    version="1.0.3",
+    version="1.0.4",
     description="Supply-chain security scanner for AI coding agents (pip + npm)",
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
@@ -61,14 +61,16 @@ setup(
         # semgrep 1.161.0 and earlier pin `tomli~=2.0.1`, which clashes
         # with pip-audit 2.7.0+'s `tomli>=2.2.1`. 1.162.0 bumped semgrep
         # to `tomli~=2.4.0` — first version that resolves cleanly.
-        # Pinned to ==1.162.0: semgrep 1.163.0 contains a Windows RPC
-        # bug (semgrep-core crashes with 'Expected a number, got \'\'')
-        # that makes all registry-based --config calls fail. Bump only
-        # after confirming the fix in the target version.
-        # Reported upstream: github.com/semgrep/semgrep/issues
-        "semgrep": ["semgrep==1.162.0"],
+        # Lower-bound pin >=1.162.0 for this reason only.
+        #
+        # NOTE: semgrep 1.163.0+ has a Windows RPC bug (Unix.socketpair EINVAL)
+        # that causes semgrep-core to crash when run from AI agent subprocess
+        # environments (Claude Code, Cursor, Windsurf, etc.). The bug does NOT
+        # affect manual/interactive terminal use. Upper-bound pin removed —
+        # fix must come from upstream semgrep. See CLAUDE.md for full details.
+        "semgrep": ["semgrep>=1.162.0"],
         "yara": ["yara-python==4.5.4"],
-        "all": ["semgrep==1.162.0", "yara-python==4.5.4"],
+        "all": ["semgrep>=1.162.0", "yara-python==4.5.4"],
     },
 
     entry_points={

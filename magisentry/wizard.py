@@ -79,16 +79,13 @@ def _is_importable_in_uv(module_name: str) -> bool:
         return False
 
 
-# Versions known to have critical bugs that make them
-# non-functional. The update notifier skips these so
-# users are never prompted to upgrade to a broken release.
-# Cross-platform: applies to all OS.
 KNOWN_BROKEN_VERSIONS: dict = {
-    # semgrep 1.163.0: RPC bug on Windows — semgrep-core
-    # crashes with "Expected a number, got ''" for all
-    # registry-based --config calls (p/secrets, p/supply-chain).
-    # Reported upstream: github.com/semgrep/semgrep/issues
-    "semgrep": ["1.163.0"],
+    # Prázdne. semgrep 1.163.0-1.165.0 mali Windows RPC bug
+    # (Unix.socketpair EINVAL v AI agent Job Object kontexte), ale
+    # MagiSentry ho teraz obchádza: krok 7 spúšťa semgrep cez WMI /
+    # Task Scheduler MIMO Job Object (step7_semgrep.py), kde funguje.
+    # Overené na 1.165.0 aj 1.166.0. Mechanizmus ponechaný pre prípad,
+    # že v budúcnosti bude treba zablokovať konkrétnu verziu balíka.
 }
 
 
@@ -260,7 +257,8 @@ def _check_package_status(pkg_name: str) -> dict:
         )
         if is_newer:
             broken = KNOWN_BROKEN_VERSIONS.get(pkg_name, [])
-            if result["latest_version"] in broken:
+            is_broken = result["latest_version"] in broken
+            if is_broken:
                 # Latest PyPI version is known broken — do not offer
                 # upgrade. Log it but keep update_available=False.
                 result["update_available"] = False
@@ -358,8 +356,8 @@ def _install_optional_extra(extra: str, check_import: str,
     if already_installed and mode == WIZARD_MODE_REINSTALL:
         status = _check_package_status(pkg)
         if status.get("latest_broken"):
-            # PyPI latest is on the KNOWN_BROKEN_VERSIONS list — never
-            # offer the upgrade, but do tell the user we deliberately
+            # PyPI latest is on the KNOWN_BROKEN_VERSIONS list —
+            # never offer the upgrade, but tell the user we deliberately
             # skipped it (so a stale install doesn't look like a bug).
             print(t.t("wizard_extra_update_broken",
                       extra=extra,

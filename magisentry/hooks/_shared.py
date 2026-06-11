@@ -10,11 +10,17 @@ The exit code determines whether the original install is allowed to proceed:
 import os
 import re
 import shlex
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 from ..scanner import main as scanner_main
+
+
+IS_WINDOWS: bool = sys.platform == "win32"
 
 
 # File extensions that mark a path as a local *package archive* — these
@@ -292,6 +298,139 @@ def _expand_requirements_file(path: str) -> List[str]:
     return out
 
 
+def _find_magisentry_binary() -> "str | None":
+    """Locate the magisentry executable for subprocess-based scanning.
+
+    Search order mirrors `_find_semgrep()` in step7_semgrep.py:
+      1. Adjacent to `sys.executable` (uv tool isolation layout —
+         `Scripts\\magisentry.exe` lives next to `python.exe`).
+      2. Known uv tool paths (Windows AppData / POSIX
+         `~/.local/share/uv/tools/...`).
+      3. `~/.local/bin/magisentry[.exe]` — uv-registered user-PATH shim.
+      4. PATH lookup via `shutil.which` (last resort).
+
+    Returns None if not found — caller falls back to in-process
+    `scanner_main()`. Never raises.
+    """
+    candidates: List[Path] = []
+    exe_name = "magisentry.exe" if IS_WINDOWS else "magisentry"
+
+    # 1. Adjacent to current Python interpreter (primary uv tool layout).
+    candidates.append(Path(sys.executable).parent / exe_name)
+
+    # 2. Known uv tool paths + user PATH shim.
+    if IS_WINDOWS:
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            candidates.append(
+                Path(appdata) / "uv" / "tools" / "magisentry"
+                / "Scripts" / exe_name
+            )
+        candidates.append(Path.home() / ".local" / "bin" / exe_name)
+    else:
+        candidates.append(Path.home() / ".local" / "bin" / exe_name)
+        candidates.append(
+            Path.home() / ".local" / "share" / "uv" / "tools"
+            / "magisentry" / "bin" / exe_name
+        )
+
+    for c in candidates:
+        if c.exists():
+            return str(c)
+
+    # 3. PATH lookup.
+    found = shutil.which("magisentry")
+    return found if found else None
+
+
+def _spawn_magisentry(args: "list[str]") -> int:
+    """Run a magisentry scan in a fresh subprocess (Windows only).
+
+    Spawning a new process breaks the MSYS bash handle-inheritance chain
+    that causes semgrep's `Unix.socketpair` to fail with EINVAL in AI
+    agent subprocess environments (Claude Code, Cursor, Windsurf, etc.).
+    The fresh process gets clean Windows process handles independent
+    of the MSYS bash parent — which is exactly what the OCaml runtime
+    needs for its IPC layer.
+
+    stdout and stderr are captured and forwarded to **hook stderr** so
+    the user sees pipeline output without risking Claude Code PreToolUse
+    stdout protocol contamination (future protocol versions may JSON-
+    parse hook stdout).
+
+    Falls back to in-process `scanner_main()` if the binary cannot be
+    found or if spawn itself fails — preserves current behaviour for
+    worst-case (broken install, missing entry-point, etc.).
+    """
+    # Local import — fallback is only path that actually needs the
+    # in-process scanner. Top-level import is also kept for POSIX
+    # direct-call site.
+    from ..scanner import main as _scanner_main
+
+    bin_path = _find_magisentry_binary()
+    if bin_path is None:
+        return _scanner_main(args)
+
+    # Use real on-disk file handles (NamedTemporaryFile) for stdout/
+    # stderr capture — NOT subprocess.PIPE. Root cause: OCaml runtime
+    # in semgrep inspects the handle type of stdout/stderr at IPC
+    # initialisation. With PIPE handles it tries `Unix.socketpair`,
+    # which fails with EINVAL on Windows and crashes step 7 with
+    # "RPC input error: Expected a number, got ''". With real file
+    # handles OCaml picks a different IPC path that works. Confirmed
+    # empirically: RC=0, all 8 steps (incl. step 7 Semgrep) pass.
+    _out = tempfile.NamedTemporaryFile(mode="wb", suffix=".txt",
+                                       delete=False)
+    _err = tempfile.NamedTemporaryFile(mode="wb", suffix=".txt",
+                                       delete=False)
+    _out_path = Path(_out.name)
+    _err_path = Path(_err.name)
+    try:
+        proc = subprocess.run(
+            [bin_path, *args],
+            stdin=subprocess.DEVNULL,
+            stdout=_out,
+            stderr=_err,
+            timeout=900,
+        )
+        _out.close()
+        _err.close()
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _out.close()
+        _err.close()
+        _out_path.unlink(missing_ok=True)
+        _err_path.unlink(missing_ok=True)
+        sys.stderr.write(f"[MagiSentry] spawn failed: {exc}\n")
+        return _scanner_main(args)  # fallback to in-process
+
+    # Forward captured output to hook stderr (visible to user/AI via
+    # Claude chat). Use stderr (not stdout) to avoid contaminating
+    # Claude Code PreToolUse hook stdout channel which may be JSON-
+    # parsed in future protocol versions. Temp files are unconditionally
+    # cleaned up in the `finally` block — even if the read fails.
+    try:
+        _out_bytes = _out_path.read_bytes()
+        _err_bytes = _err_path.read_bytes()
+        if _out_bytes:
+            sys.stderr.buffer.write(_out_bytes)
+            sys.stderr.flush()
+        if _err_bytes:
+            sys.stderr.buffer.write(_err_bytes)
+            sys.stderr.flush()
+    finally:
+        _out_path.unlink(missing_ok=True)
+        _err_path.unlink(missing_ok=True)
+
+    # Normalize exit code to {0, 1, 2}. Windows crash exits (e.g.
+    # 0xC0000005 STATUS_ACCESS_VIOLATION = -1073741819) must not
+    # confuse hook decision logic which only understands
+    # 0=allow / 2=block / 1=error.
+    rc = proc.returncode
+    if rc not in (0, 1, 2):
+        rc = 1  # treat unexpected exit as technical failure
+    return rc
+
+
 def run_for_packages(ecosystem: str, packages: List[str]) -> int:
     """Run a magisentry scan for each package; returns highest exit code.
 
@@ -300,7 +439,9 @@ def run_for_packages(ecosystem: str, packages: List[str]) -> int:
     if ecosystem == "vscode":
         worst = 0
         for ext_id in packages:
-            rc = scanner_main(["vscode", "install", ext_id])
+            rc = (_spawn_magisentry(["vscode", "install", ext_id])
+                  if IS_WINDOWS
+                  else scanner_main(["vscode", "install", ext_id]))
             worst = max(worst, rc)
             if rc == 2:
                 break
@@ -308,7 +449,9 @@ def run_for_packages(ecosystem: str, packages: List[str]) -> int:
     if ecosystem == "docker":
         worst = 0
         for path in packages:
-            rc = scanner_main(["docker", "build", path])
+            rc = (_spawn_magisentry(["docker", "build", path])
+                  if IS_WINDOWS
+                  else scanner_main(["docker", "build", path]))
             worst = max(worst, rc)
             if rc == 2:
                 break
@@ -331,7 +474,9 @@ def run_for_packages(ecosystem: str, packages: List[str]) -> int:
             # git VCS install — scanner handles steps 3–8 (no
             # PyPI/OSV identity to query, but we can still vet the
             # downloaded artefact).
-            rc = scanner_main([eco, "install", pkg])
+            rc = (_spawn_magisentry([eco, "install", pkg])
+                  if IS_WINDOWS
+                  else scanner_main([eco, "install", pkg]))
             worst = max(worst, rc)
             if rc == 2:
                 break
@@ -349,7 +494,9 @@ def run_for_packages(ecosystem: str, packages: List[str]) -> int:
                 # Resolve to absolute so the scanner can find it even if
                 # the host process changes cwd between hook and scan.
                 pkg = str(Path(pkg).resolve())
-        rc = scanner_main([eco, "install", pkg])
+        rc = (_spawn_magisentry([eco, "install", pkg])
+              if IS_WINDOWS
+              else scanner_main([eco, "install", pkg]))
         worst = max(worst, rc)
         if rc == 2:
             break
