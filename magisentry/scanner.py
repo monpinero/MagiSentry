@@ -79,11 +79,17 @@ def _pip_upgrade(pkg: str, version: str, t: Translator) -> bool:
             print(t.t("dep_update_done", pkg=pkg, version=version))
             return True
         sys.stderr.write(
-            f"[MagiSentry] pip upgrade failed (exit {proc.returncode})\n"
+            "[MagiSentry] "
+            + t.t("dep_upgrade_failed_exit", code=proc.returncode)
+            + "\n"
         )
         return False
     except (OSError, subprocess.SubprocessError) as exc:
-        sys.stderr.write(f"[MagiSentry] pip upgrade failed: {exc}\n")
+        sys.stderr.write(
+            "[MagiSentry] "
+            + t.t("dep_upgrade_failed_error", error=str(exc))
+            + "\n"
+        )
         return False
 
 
@@ -147,8 +153,7 @@ def _check_integrity(t: Translator) -> None:
         from .integrity import check, has_manifest
         if not has_manifest():
             sys.stderr.write(
-                "[MagiSentry] No integrity manifest found. "
-                "Run: magisentry integrity update\n"
+                "[MagiSentry] " + t.t("integrity_no_manifest") + "\n"
             )
             sys.stderr.flush()
             return
@@ -202,13 +207,21 @@ def _handle_integrity_command(args: List[str], config: Optional[Config],
 
 # ---------- PATH order check ----------
 
-def _check_path_order() -> None:
+def _check_path_order(t: Translator) -> None:
     """Warn if the MagiSentry shim dir is not the first `pip` on PATH.
 
     A correctly-installed shim makes EVERY `pip install` go through us
     first. If `which pip` resolves to a different directory, an AI agent
     can call the real pip and bypass scanning entirely. Non-blocking —
-    we just emit a stderr warning so the user notices and fixes PATH."""
+    we just emit a stderr warning so the user notices and fixes PATH.
+
+    When the resolved pip lives under a system-wide `Python<digit>` /
+    `python3` directory we add an extra explanatory line so the user
+    knows why their user-PATH shim is being shadowed (Windows places
+    system Python in machine-PATH which beats user-PATH; mirrored on
+    Linux/macOS via system package managers). Detection is purely
+    string-based — no filesystem queries — so it stays Non-blocking
+    even on weird PATH layouts."""
     shim_pip = shutil.which("pip")
     if shim_pip is None:
         return
@@ -218,11 +231,20 @@ def _check_path_order() -> None:
         return
     ms_dir = str(ms_data.resolve())
     if shim_dir != ms_dir:
+        import re as _re
+        _is_system = bool(_re.search(r'[/\\][Pp]ython\d', shim_pip))
+        sys.stderr.write(t.t("path_order_warning_header") + "\n")
+        sys.stderr.write(t.t("path_order_warning_found",
+                             found=shim_pip) + "\n")
+        if _is_system:
+            sys.stderr.write(
+                t.t("path_order_warning_system_python") + "\n"
+            )
         sys.stderr.write(
-            "[MagiSentry WARNING] pip in PATH is not the MagiSentry "
-            f"shim.\n  Found: {shim_pip}\n  Expected shim dir: "
-            f"{ms_data}\n  An AI agent may bypass scanning.\n"
+            t.t("path_order_warning_shim", shim_dir=str(ms_data)) + "\n"
         )
+        sys.stderr.write(t.t("path_order_warning_agents_ok") + "\n")
+        sys.stderr.write(t.t("path_order_warning_fix") + "\n")
         sys.stderr.flush()
 
 
@@ -299,6 +321,30 @@ def _check_for_update_impl(t: Translator, config: Optional[Config] = None) -> No
         pass
 
     # 4. Interactive menu.
+    # Suppress update banner spam in AI agent hook context (non-interactive
+    # stdin). In AI context (stdin is not a TTY), show the banner at most
+    # once every 24 hours to avoid spamming when scanning many packages in
+    # a single session (e.g. `pip install -r requirements.txt` with 50+
+    # entries triggers 50 scans, and every one would otherwise re-print
+    # the banner). In manual/interactive context (stdin IS a TTY), the
+    # banner is always shown so the user never misses an update prompt.
+    if not sys.stdin.isatty():
+        _stamp_file = Path.home() / ".magisentry" / "hook_update_shown.txt"
+        try:
+            import datetime as _dt
+            if _stamp_file.exists():
+                _last = _dt.datetime.fromisoformat(
+                    _stamp_file.read_text(encoding="utf-8").strip()
+                )
+                if _dt.datetime.now() - _last < _dt.timedelta(hours=24):
+                    return  # shown recently — silent skip
+            # Not shown recently — show once and save timestamp.
+            _stamp_file.parent.mkdir(parents=True, exist_ok=True)
+            _stamp_file.write_text(
+                _dt.datetime.now().isoformat(), encoding="utf-8"
+            )
+        except Exception:
+            return  # any I/O failure — silently skip banner in AI context
     try:
         print()
         print(t.t("self_update_available", new=latest, cur=__version__))
@@ -1054,7 +1100,20 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         return _main_impl(argv)
     except KeyboardInterrupt:
-        sys.stderr.write("\n[MagiSentry] Prerušené používateľom.\n")
+        # `main` runs OUTSIDE `_main_impl`, so we don't have a Translator
+        # in scope. Load config + build a Translator inside try/except so
+        # any failure (missing config, corrupted JSON, locale read error)
+        # falls back to a hardcoded English message rather than crashing
+        # the interrupt handler itself.
+        try:
+            from .i18n import Translator
+            from .config import load as _load_config
+            _cfg = _load_config()
+            _lang = _cfg.language if _cfg else "en"
+            _t = Translator(_lang)
+            sys.stderr.write("\n" + _t.t("interrupted") + "\n")
+        except Exception:
+            sys.stderr.write("\n[MagiSentry] Interrupted by user.\n")
         return EXIT_TECHNICAL
 
 
@@ -1113,7 +1172,7 @@ def _main_impl(argv: Optional[List[str]] = None) -> int:
         return EXIT_OK
 
     t = Translator(config.language if config else "en")
-    _check_path_order()
+    _check_path_order(t)
     _check_integrity(t)
     from .self_audit import check_uv_isolation
     check_uv_isolation(t)

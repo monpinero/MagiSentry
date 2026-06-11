@@ -122,6 +122,24 @@ MagiSentry wraps the package manager command so that your AI agent's install req
 
 > Any tool that runs `pip install`, `npm install`, `magisentry vscode install`, or `magisentry docker build` in a terminal will be intercepted automatically once MagiSentry is set up.
 
+### Per-tool installation notes
+
+**Aider** — Pre-command hook
+
+> **Per-project installation required:** Aider reads configuration from
+> the current project directory. Run `magisentry-install-hooks --tool aider`
+> in each project where you want protection. The shell shim
+> (`~/.magisentry/bin/`) provides global interception as a fallback
+> when it is first on PATH.
+
+**GitHub Copilot** — Terminal command override
+
+> **Per-project installation required:** GitHub Copilot reads tasks from
+> the project's `.vscode/tasks.json`. Run
+> `magisentry-install-hooks --tool copilot` in each project where you
+> want protection. The shell shim (`~/.magisentry/bin/`) provides global
+> interception as a fallback when it is first on PATH.
+
 ### Additional protection — dangerous command blocking
 
 MagiSentry intercepts shell commands that attempt to download and execute payloads outside of package managers.
@@ -197,9 +215,10 @@ uv tool install "magisentry[all]"       # everything
 
 > If you installed via git clone, run these from the cloned directory.
 
-> **Note:** MagiSentry pins semgrep to a tested version (`==1.162.0`).
-> semgrep 1.163.0 contains a Windows RPC bug — if the wizard offers
-> a semgrep update, decline it until the next MagiSentry release.
+> **Note:** On Windows, MagiSentry runs semgrep via WMI / Task Scheduler,
+> outside the AI agent's Job Object. This sidesteps an upstream
+> semgrep-core bug (`Unix.socketpair` EINVAL), so semgrep updates are
+> safe to accept.
 
 ### Changing settings after installation
 
@@ -375,13 +394,13 @@ or the server does not respond in time, the scan fails with:
 **Workaround:** Run the same scan again. The second run uses the cached
 rulesets and completes normally.
 
-### Semgrep 1.163.0 — broken on Windows
+### Semgrep on Windows — automatic workaround
 
-semgrep 1.163.0 contains a Windows RPC bug that causes step 7 to crash on
-every scan. MagiSentry pins semgrep to `==1.162.0` which works correctly.
-
-If the wizard offers a semgrep update, decline it (choose **[3] Skip this
-version**) until the next MagiSentry release confirms compatibility.
+semgrep-core has an upstream bug (`Unix.socketpair` EINVAL) that crashes
+step 7 when semgrep runs inside an AI agent's Job Object. MagiSentry works
+around this automatically: on Windows it launches semgrep via WMI / Task
+Scheduler, outside the Job Object, where it runs correctly. semgrep updates
+are safe to accept.
 
 ---
 

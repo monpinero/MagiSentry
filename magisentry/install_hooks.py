@@ -173,6 +173,11 @@ def install_aider() -> None:
     target = Path.cwd() / ".aider.conf.yml"
     src = HOOKS_DIR / "aider" / ".aider.conf.yml"
     _copy(src, target)
+    # `_copy` raises on failure, so reaching this line means the hook
+    # really landed. Tell the user it's project-local — the shell shim
+    # is the global fallback, but Aider only reads .aider.conf.yml from
+    # the current working dir.
+    print(T.t("ihooks_aider_per_project_note"))
 
 
 def install_codex() -> None:
@@ -190,6 +195,10 @@ def install_copilot() -> None:
     snippet = json.loads((HOOKS_DIR / "copilot" / "tasks.json").read_text(encoding="utf-8"))
     _merge_json(target, snippet)
     install_shell_shim()
+    # Both helpers above raise on failure; reaching this line means
+    # the per-project tasks.json was written. Note is project-local —
+    # the shell shim is the global fallback.
+    print(T.t("ihooks_copilot_per_project_note"))
 
 
 def install_cline() -> None:
@@ -295,13 +304,26 @@ def uninstall_continue() -> None:
 
 
 def uninstall_aider() -> None:
-    """Remove .aider.conf.yml (project-local, best-effort)."""
-    target = Path.cwd() / ".aider.conf.yml"
-    if target.exists():
-        target.unlink()
-        print(T.t("ihooks_uninstalled", path=str(target)))
-    else:
-        print(T.t("ihooks_uninstall_not_found", path=str(target)))
+    """Aider's only MagiSentry contribution is the shell shim. The shim
+    lives in SHIM_DIR which is removed by the top-level uninstaller
+    (`uninstaller.uninstall()`) before this function runs. Touching
+    project files would be wrong: `Path.cwd()` is whatever directory
+    the user invoked `magisentry uninstall` from — almost never the
+    project that originally received the hook. Print an informational
+    message and exit. No file operations."""
+    print(T.t("ihooks_aider_shim_removed"))
+
+
+def uninstall_copilot() -> None:
+    """Same reasoning as `uninstall_aider`: Copilot's contribution is
+    the shell shim (already removed by the top-level uninstaller).
+    Per-project `.vscode/tasks.json` files belong to the user — we
+    don't know which projects they're in, and we won't delete entries
+    from whatever directory happens to be CWD. The `_uninstall_vscode_tasks`
+    helper is still used by `uninstall_cline` which has a different
+    install footprint (the Cline VS Code extension only reads from
+    one place per project — but cline uninstall too is best-effort)."""
+    print(T.t("ihooks_copilot_shim_removed"))
 
 
 def _uninstall_vscode_tasks() -> None:
@@ -326,10 +348,6 @@ def _uninstall_vscode_tasks() -> None:
             print(T.t("ihooks_uninstall_not_found", path=str(target)))
     except (OSError, json.JSONDecodeError) as e:
         print(T.t("ihooks_error", error=str(e)))
-
-
-def uninstall_copilot() -> None:
-    _uninstall_vscode_tasks()
 
 
 def uninstall_cline() -> None:
