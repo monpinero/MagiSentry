@@ -144,6 +144,10 @@
   "stderr_threat_no_details": "(no further details)",
   "stderr_failsecure_header": "🚨 MAGISENTRY BLOCKED INSTALLATION (Fail Secure)",
   "stderr_failsecure_reason": "Scanner step failed and could not be retried successfully.",
+  "stderr_failsecure_action_header": "→ What you (the AI agent) should do now:",
+  "stderr_failsecure_t1": "This package could NOT be safely verified (step: {step}), so in fail-secure mode it is blocked as a precaution. Do NOT install it and do NOT bypass this block. If the failure looks transient — a network error, a missing API key, or a rate limit — fix that cause and run the scan again.",
+  "stderr_failsecure_t2": "This package has failed verification twice (step: {step}). Look more closely for the underlying cause of the failure and fix it if you can — for example restore network access, provide the required credentials, or correct the environment — then run the scan again. Do NOT install the package, do NOT bypass the block, and do NOT disable or weaken any MagiSentry check to force it through.",
+  "stderr_failsecure_t3": "This package has now failed verification {count} times (step: {step}) and is still blocked. STOP retrying it. Do NOT pick a previously blocked package (including this one) as the alternative — that only loops between blocked packages. Now follow the action plan: (1) find a safe, established alternative that serves the same purpose, has NOT been blocked here, and scans cleanly — every install is re-checked, so if an alternative also fails, keep looking among DIFFERENT packages; (2) if no safe alternative exists, implement the needed functionality yourself, EXCEPT for security-sensitive or error-prone work (cryptography, authentication, parsing untrusted data, network protocols, financial calculations) — do not self-implement those; (3) if that is too complex or risky, escalate to the human with a summary of the package, the failed step, and what you tried. Do not bypass the block or silently keep retrying.",
   "toast_threat_title": "🚨 Threat Blocked",
   "toast_update_title": "⬆️ Update Available",
   "toast_dep_cve_title": "⚠️ MagiSentry dependency vulnerable",
@@ -213,6 +217,10 @@
   "ihooks_path_exists": "  PATH already contains {path}",
   "ihooks_path_prepended": "  prepended to user PATH (open a new terminal): {path}",
   "ihooks_path_failed": "  WARN: could not update PATH ({error}). Add manually: {path}",
+  "ipath_registered": "Registered on user PATH: {path}",
+  "ipath_already": "Already on user PATH: {path}",
+  "ipath_failed": "WARN: could not update user PATH ({error})",
+  "ipath_new_terminal": "Open a NEW terminal for changes to take effect.",
   "ihooks_bashrc_exists": "  ~/.bashrc already prepends {path}",
   "ihooks_bashrc_appended": "  appended to ~/.bashrc: {line}",
   "ihooks_codex_note": "  codex: integration relies on the universal shell shim.",
@@ -277,5 +285,9 @@
   "wizard_pkg_update_available": "{package}: installed {current}, available {latest}. Update? [Y/n/s]  (Y=update with scan, n=skip, s=update without scan)",
   "wizard_pkg_update_scan_first": "Scanning {package}=={latest} before update...",
   "wizard_pkg_update_skipped": "{package} update skipped.",
-  "wizard_pkg_update_no_scan": "Installing {package}=={latest} without scan (advanced mode)."
+  "wizard_pkg_update_no_scan": "Installing {package}=={latest} without scan (advanced mode).",
+  "stderr_threat_action_header": "→ What you (the AI agent) should do now:",
+  "stderr_threat_action_1": "1. Do NOT install this package and do NOT bypass this block.",
+  "stderr_threat_action_2": "2. Find a safe, established alternative that serves the same purpose. (MagiSentry re-scans every install attempt — if the alternative also fails, keep looking.)",
+  "stderr_threat_action_3": "3. If no safe alternative exists, stop and alert the human. Summarize: which package, why it was blocked, what you tried, and whether you could safely implement the functionality yourself — for security-sensitive or error-prone areas (cryptography, authentication, parsing untrusted data, network protocols, financial calculations) do NOT recommend self-implementing. Let the human decide."
 }

@@ -144,6 +144,10 @@
   "stderr_threat_no_details": "(žiadne ďalšie detaily)",
   "stderr_failsecure_header": "🚨 MAGISENTRY ZABLOKOVAL INŠTALÁCIU (Fail Secure)",
   "stderr_failsecure_reason": "Krok skenera zlyhal a nepodarilo sa ho úspešne zopakovať.",
+  "stderr_failsecure_action_header": "→ Čo máš (ty, AI agent) teraz urobiť:",
+  "stderr_failsecure_t1": "Tento balík sa NEPODARILO bezpečne overiť (krok: {step}), preto je vo fail-secure móde z opatrnosti blokovaný. NEINŠTALUJ ho a tento blok neobchádzaj. Ak zlyhanie vyzerá dočasne — chyba siete, chýbajúci API kľúč alebo limit požiadaviek — vyrieš túto príčinu a sken spusti znova.",
+  "stderr_failsecure_t2": "Tento balík zlyhal pri overení dvakrát (krok: {step}). Pozri sa bližšie na koreňovú príčinu zlyhania a ak sa dá, odstráň ju — napríklad obnov prístup k sieti, doplň potrebné prihlasovacie údaje alebo oprav prostredie — a potom sken spusti znova. Balík NEINŠTALUJ, blok neobchádzaj a žiadnu kontrolu MagiSentry NEvypínaj ani neoslabuj, aby si ho pretlačil.",
+  "stderr_failsecure_t3": "Tento balík už zlyhal pri overení {count}× (krok: {step}) a je naďalej blokovaný. PRESTAŇ ho skúšať. NEVYBERAJ ako alternatívu žiadny už zablokovaný balík (vrátane tohto) — to len cykluje medzi blokovanými balíkmi. Teraz nasleduj akčný plán: (1) nájdi bezpečnú, zavedenú alternatívu, ktorá splní rovnaký účel, NEbola tu zablokovaná a prejde skenom — každá inštalácia sa znova preveruje, takže ak aj alternatíva zlyhá, hľadaj ďalej medzi INÝMI balíkmi; (2) ak žiadna bezpečná alternatíva nie je, potrebnú funkcionalitu naprogramuj sám, OKREM bezpečnostne citlivej alebo na chyby náchylnej práce (kryptografia, autentifikácia, parsovanie nedôveryhodných dát, sieťové protokoly, finančné výpočty) — tú sám neimplementuj; (3) ak je to príliš zložité alebo rizikové, eskaluj na človeka so zhrnutím balíka, zlyhaného kroku a toho, čo si skúsil. Blok neobchádzaj a ten istý balík potichu neopakuj.",
   "toast_threat_title": "🚨 Hrozba zablokovaná",
   "toast_update_title": "⬆️ Dostupná aktualizácia",
   "toast_dep_cve_title": "⚠️ Závislosť MagiSentry je zraniteľná",
@@ -213,6 +217,10 @@
   "ihooks_path_exists": "  PATH už obsahuje {path}",
   "ihooks_path_prepended": "  pridané na začiatok user PATH (otvorte nový terminál): {path}",
   "ihooks_path_failed": "  POZOR: PATH sa nepodarilo aktualizovať ({error}). Pridajte manuálne: {path}",
+  "ipath_registered": "Pridané na užívateľský PATH: {path}",
+  "ipath_already": "Už je na užívateľskom PATH: {path}",
+  "ipath_failed": "POZOR: užívateľský PATH sa nepodarilo aktualizovať ({error})",
+  "ipath_new_terminal": "Otvorte NOVÝ terminál, aby sa zmeny prejavili.",
   "ihooks_bashrc_exists": "  ~/.bashrc už pridáva {path}",
   "ihooks_bashrc_appended": "  pridané do ~/.bashrc: {line}",
   "ihooks_codex_note": "  codex: integrácia využíva univerzálny shell shim.",
@@ -277,5 +285,9 @@
   "wizard_pkg_update_available": "{package}: nainštalovaný {current}, dostupný {latest}. Aktualizovať? [Y/n/s]  (Y=aktualizovať so skenom, n=preskočiť, s=aktualizovať bez skenu)",
   "wizard_pkg_update_scan_first": "Skenujem {package}=={latest} pred aktualizáciou...",
   "wizard_pkg_update_skipped": "Aktualizácia {package} preskočená.",
-  "wizard_pkg_update_no_scan": "Inštalujem {package}=={latest} bez skenovania (pokročilý režim)."
+  "wizard_pkg_update_no_scan": "Inštalujem {package}=={latest} bez skenovania (pokročilý režim).",
+  "stderr_threat_action_header": "→ Čo máš (ty, AI agent) teraz urobiť:",
+  "stderr_threat_action_1": "1. Tento balík NEINŠTALUJ a tento blok sám neobchádzaj.",
+  "stderr_threat_action_2": "2. Nájdi bezpečnú, zavedenú alternatívu s rovnakým účelom. (MagiSentry preveruje každý pokus o inštaláciu — ak alternatíva neprejde, hľadaj ďalej.)",
+  "stderr_threat_action_3": "3. Ak bezpečná alternatíva neexistuje, zastav a upozorni človeka. Zhrň: ktorý balík, prečo bol zablokovaný, čo si skúsil, a či by si funkcionalitu vedel bezpečne naprogramovať sám — pri bezpečnostne citlivej alebo chybám náchylnej oblasti (kryptografia, autentifikácia, parsovanie nedôveryhodných dát, sieťové protokoly, finančné výpočty) vlastnú implementáciu NEodporúčaj. Ďalší postup nech rozhodne človek."
 }
