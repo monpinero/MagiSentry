@@ -3,6 +3,8 @@
 **Skener bezpečnosti dodávateľského reťazca pre AI coding agentov.**  
 Automaticky skenuje Python (pip), JavaScript (npm/yarn), rozšírenia VS Code a Dockerfile cez 10-krokový skener *predtým* ako sa čokoľvek nainštaluje alebo zostaví — aby tvoj AI agent nemohol byť oklamaný do spustenia škodlivého kódu.
 
+Plne lokálny a offline — žiadny cloud, žiadny účet, žiadna telemetria. Zadarmo a open-source (MIT).
+
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/monpinero/MagiSentry/blob/main/LICENSE)
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/monpinero/MagiSentry)
@@ -262,7 +264,7 @@ magisentry pip install "numpy==1.26.4"
 magisentry pip install -r requirements.txt
 ```
 
-Toto je rovnaký príkaz, ktorý hook posiela automaticky keď Claude Code alebo iný agent spustí pip install — len ho voláš sám. Celý 10-krokový pipeline prebehne identicky v oboch prípadoch.
+Toto je rovnaký príkaz, ktorý hook posiela automaticky keď Claude Code alebo iný agent spustí pip install — len ho voláš sám. Celý 8-krokový pipeline prebehne identicky v oboch prípadoch.
 
 > **Tip:** Po inštalácii otvor nové okno PowerShell, aby si sa uistil, že príkaz magisentry je dostupný v PATH.
 
@@ -380,20 +382,6 @@ magisentry whitelist add pip:nazov-balicka
 
 ## Známe problémy
 
-### Semgrep — prvý sken po inštalácii môže zlyhať
-
-Keď semgrep beží prvýkrát, stiahne rulsety (`p/supply-chain`, `p/secrets`)
-z internetu do lokálnej cache. Ak je spojenie pomalé alebo server neodpovie
-včas, sken zlyhá s hláškou:
-
-```
-[7/8] Semgrep — statická analýza kódu
-  -> ZLYHANIE: Semgrep spadol pri spracovaní vstupu.
-```
-
-**Riešenie:** Spusti rovnaký sken znova. Druhý sken použije cache
-a prebehne správne.
-
 ### Semgrep na Windows — automatické riešenie
 
 semgrep-core má upstream bug (`Unix.socketpair` EINVAL) ktorý zhodí krok 7,
@@ -426,6 +414,8 @@ MagiSentry beží predvolene v režime **Fail Safe**. Zmeniť to môžeš v `con
 |---|---|
 | `fail_safe` (predvolené) | Ak niektorý krok zlyhá alebo vyprší čas, inštalácia pokračuje |
 | `fail_secure` | Ak akýkoľvek krok zlyhá z akéhokoľvek dôvodu, inštalácia je zablokovaná |
+
+> **Akčný plán pre AI agenta (Fail Secure).** Keď krok skenu v režime `fail_secure` nedokáže dobehnúť, MagiSentry inštaláciu zablokuje a do stderr vypíše krátky, stupňovaný akčný plán pre AI agenta: jeden pokus znova ak zlyhanie vyzerá dočasne, potom nájdenie a odstránenie príčiny, a po opakovaných zlyhaniach zastavenie a buď bezpečná alternatíva, ktorá prejde skenom, alebo eskalácia na teba. Opakované zlyhania toho istého balíka si pamätá, aby sa agent nezacyklil.
 
 ```json
 {

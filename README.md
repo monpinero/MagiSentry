@@ -3,6 +3,8 @@
 **Supply chain security scanner for AI coding agents.**  
 Automatically scans Python (pip), JavaScript (npm/yarn), VS Code extensions and Dockerfiles through a 10-step scanner *before* anything is installed or built — so your AI agent can't be tricked into running malicious code.
 
+Fully local and offline — no cloud, no account, no telemetry. Free and open-source (MIT).
+
 [![Python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://github.com/monpinero/MagiSentry/blob/main/LICENSE)
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](https://github.com/monpinero/MagiSentry)
@@ -262,7 +264,7 @@ magisentry pip install "numpy==1.26.4"
 magisentry pip install -r requirements.txt
 ```
 
-This is the same command the hook sends automatically when Claude Code or another agent runs pip install — you are just calling it yourself. The full 10-step pipeline runs identically either way.
+This is the same command the hook sends automatically when Claude Code or another agent runs pip install — you are just calling it yourself. The full 8-step pipeline runs identically either way.
 
 > **Tip:** Open a new PowerShell window after installation to make sure the magisentry command is available on PATH.
 
@@ -380,20 +382,6 @@ magisentry whitelist add pip:package-name
 
 ## Known issues
 
-### Semgrep — first scan after installation may fail
-
-When semgrep runs for the first time, it downloads rulesets (`p/supply-chain`,
-`p/secrets`) from the internet into a local cache. If the connection is slow
-or the server does not respond in time, the scan fails with:
-
-```
-[7/8] Semgrep — static code analysis
-  -> FAILURE: Semgrep crashed while processing input.
-```
-
-**Workaround:** Run the same scan again. The second run uses the cached
-rulesets and completes normally.
-
 ### Semgrep on Windows — automatic workaround
 
 semgrep-core has an upstream bug (`Unix.socketpair` EINVAL) that crashes
@@ -427,6 +415,8 @@ MagiSentry runs in **Fail Safe** mode by default. You can change this in `config
 |---|---|
 | `fail_safe` (default) | If a scan step crashes or times out, installation continues |
 | `fail_secure` | If any scan step fails for any reason, installation is blocked |
+
+> **AI agent action plan (Fail Secure).** When a scan step cannot complete in `fail_secure` mode, MagiSentry blocks the install and writes a short, escalating action plan to stderr for the AI agent: retry once if the failure looks transient, then find and fix the root cause, and after repeated failures stop and either switch to a safe alternative that scans cleanly or escalate to you. Repeated failures of the same package are remembered, so the agent does not loop on it.
 
 ```json
 {

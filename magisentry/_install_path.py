@@ -38,8 +38,13 @@ def _user_scripts_dir() -> str:
 def _add_to_registry_path(new_dir: str) -> bool:
     """Idempotently prepend `new_dir` to user-scope PATH and dedupe.
 
-    Always moves the entry to position 0 so MagiSentry shims take
-    priority over any system pip / npm / python.
+    Always moves the entry to position 0 of the USER-scope PATH so the
+    MagiSentry shim precedes other user-scope entries. NOTE: this does
+    NOT beat a system-wide Python: Windows searches MACHINE PATH before
+    user PATH, so a Python in machine PATH still shadows the shim.
+    `_check_path_order` warns about that at scan time (run setup as
+    Administrator for full terminal protection). AI agents are
+    unaffected — they go through the PreToolUse hook, not PATH lookup.
 
     Returns True if the registry was actually written (entry added or
     duplicates removed), False if no change was needed.
@@ -60,10 +65,12 @@ def _add_to_registry_path(new_dir: str) -> bool:
             if e.lower() not in (x.lower() for x in seen):
                 seen.append(e)
 
-        # Always prepend — MagiSentry shim must come before any
-        # system pip/npm/python on PATH. Remove any existing
-        # occurrence first (it may already be present but in the
-        # wrong position), then insert at index 0.
+        # Prepend within USER-scope PATH so the shim precedes other
+        # user entries. (Machine PATH is still searched first, so a
+        # system-wide Python there wins — see docstring; that case is
+        # warned about by _check_path_order at scan time.) Remove any
+        # existing occurrence first (it may already be present but in
+        # the wrong position), then insert at index 0.
         seen = [e for e in seen if e.lower() != new_dir.lower()]
         seen.insert(0, new_dir)
         added = True
@@ -85,19 +92,23 @@ def main() -> int:
         str(Path.home() / ".magisentry" / "bin"),
     ]
 
+    from .i18n import Translator
+    from .install_hooks import _detect_language
+    t = Translator(_detect_language())
+
     any_change = False
     for d in targets:
         try:
             if _add_to_registry_path(d):
                 any_change = True
-                print(f"Registered on user PATH: {d}")
+                print(t.t("ipath_registered", path=d))
             else:
-                print(f"Already on user PATH: {d}")
+                print(t.t("ipath_already", path=d))
         except OSError as e:
-            print(f"WARN: could not update user PATH ({e})", file=sys.stderr)
+            print(t.t("ipath_failed", error=str(e)), file=sys.stderr)
 
     if any_change:
-        print("Open a NEW terminal for changes to take effect.")
+        print(t.t("ipath_new_terminal"))
     return 0
 
 

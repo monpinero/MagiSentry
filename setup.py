@@ -21,7 +21,7 @@ LONG_DESCRIPTION = README.read_text(encoding="utf-8") if README.exists() else (
 
 setup(
     name="magisentry",
-    version="1.0.4",
+    version="1.0.5",
     description="Supply-chain security scanner for AI coding agents (pip + npm)",
     long_description=LONG_DESCRIPTION,
     long_description_content_type="text/markdown",
@@ -90,6 +90,7 @@ setup(
         "Development Status :: 4 - Beta",
         "Environment :: Console",
         "Intended Audience :: Developers",
+        "Intended Audience :: System Administrators",
         "License :: OSI Approved :: MIT License",
         "Operating System :: Microsoft :: Windows",
         "Operating System :: POSIX :: Linux",
@@ -105,5 +106,5 @@ setup(
         "Topic :: Security",
         "Topic :: Software Development :: Quality Assurance",
     ],
-    keywords="security supply-chain pip npm scanner ai-agents claude-code cursor",
+    keywords="security supply-chain supply-chain-security pip npm yarn scanner malware malicious-package dependency-security ai-agents ai-coding-agent claude-code cursor windsurf aider copilot offline local-first privacy open-source",
 )

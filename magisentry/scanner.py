@@ -51,6 +51,10 @@ def _emit_threat_stderr(t: Translator, package: str,
         sys.stderr.write(t.t("stderr_threat_reason", reason=reason) + "\n")
         sys.stderr.write(t.t("stderr_threat_step", step=step_name) + "\n")
         sys.stderr.write(t.t("stderr_threat_details", details=details) + "\n")
+    sys.stderr.write("\n" + t.t("stderr_threat_action_header") + "\n")
+    sys.stderr.write(t.t("stderr_threat_action_1") + "\n")
+    sys.stderr.write(t.t("stderr_threat_action_2") + "\n")
+    sys.stderr.write(t.t("stderr_threat_action_3") + "\n")
     sys.stderr.write("\n")
     sys.stderr.flush()
 
@@ -60,6 +64,47 @@ def _emit_failsecure_stderr(t: Translator, package: str) -> None:
     sys.stderr.write(t.t("stderr_threat_package", package=package) + "\n")
     sys.stderr.write(t.t("stderr_threat_reason",
                          reason=t.t("stderr_failsecure_reason")) + "\n\n")
+    sys.stderr.flush()
+
+
+def _failsecure_tier_key(count: int) -> str:
+    """Map running failure count to the escalating action-plan key.
+    1 -> retry once; 2 -> find/fix root cause and retry; 3+ -> escalate."""
+    if count <= 1:
+        return "stderr_failsecure_t1"
+    if count == 2:
+        return "stderr_failsecure_t2"
+    return "stderr_failsecure_t3"
+
+
+def _failsecure_noninteractive() -> bool:
+    """True when no interactive human is at stdin (AI agent / hook context).
+    Defaults to True if stdin is unusable."""
+    try:
+        return not sys.stdin.isatty()
+    except Exception:
+        return True
+
+
+def _emit_failsecure_action(t: Translator, package: str,
+                            ecosystem: str, step: Optional[str]) -> None:
+    """Fail-secure block WITH the escalating, memory-backed action plan.
+    Only AI/non-interactive contexts get the tiered plan; a human at a TTY
+    gets the plain block. The hard block (exit 2) applies either way."""
+    step = step or "—"
+    sys.stderr.write("\n" + t.t("stderr_failsecure_header") + "\n")
+    sys.stderr.write(t.t("stderr_threat_package", package=package) + "\n")
+    sys.stderr.write(t.t("stderr_threat_reason",
+                         reason=t.t("stderr_failsecure_reason")) + "\n")
+    if _failsecure_noninteractive():
+        try:
+            from . import scan_attempts
+            count = scan_attempts.record_failure(ecosystem, package, step)
+        except Exception:
+            count = 1
+        sys.stderr.write("\n" + t.t("stderr_failsecure_action_header") + "\n")
+        sys.stderr.write(t.t(_failsecure_tier_key(count), step=step, count=count) + "\n")
+    sys.stderr.write("\n")
     sys.stderr.flush()
 
 
@@ -505,6 +550,9 @@ def _run_pipeline(steps, ecosystem: str, package: str, ctx: dict,
                 threats.append(final)
             elif final.status == "FAILURE" and config.mode == "failsecure":
                 failsecure_blocked = True
+                # Remember the first step that triggered the fail-secure
+                # block so the action plan can name it ({step}).
+                ctx.setdefault("_failsecure_step", name)
     return threats, failsecure_blocked, False
 
 
@@ -526,6 +574,15 @@ def scan(ecosystem: str, package: str, config: Config, t: Translator) -> int:
     if aborted:
         print(t.t("scan_user_abort"))
         return EXIT_THREAT if threats else EXIT_TECHNICAL
+
+    # Verification ran to completion without a fail-secure block → this spec
+    # is no longer failing, so forget any prior failure record (best-effort).
+    if not failures_failsecure_blocked:
+        try:
+            from . import scan_attempts
+            scan_attempts.clear(ecosystem, package)
+        except Exception:
+            pass
 
     if threats:
         print()
@@ -551,7 +608,8 @@ def scan(ecosystem: str, package: str, config: Config, t: Translator) -> int:
 
     if failures_failsecure_blocked:
         print(t.t("scan_blocked_failure_secure"))
-        _emit_failsecure_stderr(t, package)
+        _emit_failsecure_action(t, package, ecosystem,
+                                ctx.get("_failsecure_step"))
         return EXIT_TECHNICAL
 
     print(t.t("scan_completed_ok"))
